@@ -1,126 +1,173 @@
-import { useEffect, useState } from "react";
-import {
-  Container,
-  Typography,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
-  CircularProgress,
-  Alert,
-  Box,
-} from "@mui/material";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import { getTransactions } from "../api";
+import { motion } from "framer-motion";
+import { Activity, Landmark, ShieldAlert, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { getSimulationContext, getTransactions } from "../api";
+import { getApiErrorMessage } from "../utils/apiError";
+
+function StatCard({ icon: Icon, label, value, tone = "cyan" }) {
+  const toneClasses = {
+    cyan: "text-cyan-200",
+    rose: "text-rose-200",
+    mint: "text-emerald-200",
+    violet: "text-indigo-200",
+  };
+  return (
+    <div className="glass rounded-2xl p-5">
+      <Icon className={`h-5 w-5 ${toneClasses[tone] || toneClasses.cyan}`} />
+      <p className="mt-3 text-sm text-slate-400">{label}</p>
+      <p className="mt-1 font-display text-2xl font-semibold text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [context, setContext] = useState(null);
+  const [transactions, setTransactions] = useState([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getTransactions()
-      .then((res) => setRows(res.data))
-      .catch((err) =>
-        setError(err.response?.data?.detail || "Failed to load transactions"),
-      )
+    Promise.all([getSimulationContext(), getTransactions()])
+      .then(([contextResponse, transactionResponse]) => {
+        setContext(contextResponse.data);
+        setTransactions(transactionResponse.data || []);
+      })
+      .catch((err) => {
+        setError(getApiErrorMessage(err, "Failed to load dashboard data."));
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading)
+  const stats = useMemo(() => {
+    const total = transactions.length;
+    const fraudCount = transactions.filter(
+      (item) => item.prediction === "FRAUD",
+    ).length;
+    const avgRisk = total
+      ? (
+          (transactions.reduce((sum, item) => sum + item.risk_score, 0) /
+            total) *
+          100
+        ).toFixed(1)
+      : "0.0";
+    return {
+      total,
+      fraudCount,
+      avgRisk,
+      balance: context?.sender_account?.balance?.toFixed(2) || "0.00",
+      accountNumber: context?.sender_account?.account_number || "-",
+    };
+  }, [transactions, context]);
+
+  if (loading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 10 }}>
-        <CircularProgress />
-      </Box>
+      <div className="px-6 py-16 text-center text-slate-300">
+        Loading dashboard...
+      </div>
     );
+  }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 6 }}>
-      <Typography
-        variant="h4"
-        fontWeight={700}
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="mb-6"
       >
-        <DashboardIcon color="primary" fontSize="large" /> Transaction History
-      </Typography>
-      <Typography variant="body1" color="text.secondary" mb={3}>
-        Recent predictions submitted to the system.
-      </Typography>
+        <h1 className="font-display text-3xl font-bold text-white">
+          User Dashboard
+        </h1>
+        <p className="mt-1 text-slate-300">
+          Monitor account health, transaction outcomes, and fraud exposure.
+        </p>
+      </motion.div>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <p className="mb-4 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-200">
           {error}
-        </Alert>
+        </p>
       )}
 
-      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3 }}>
-        <Table size="small">
-          <TableHead sx={{ backgroundColor: "#1a237e" }}>
-            <TableRow>
-              {[
-                "#",
-                "Transaction ID",
-                "User",
-                "RF Prob",
-                "XGB Prob",
-                "ISO Score",
-                "Final Score",
-                "Prediction",
-                "Timestamp",
-              ].map((h) => (
-                <TableCell key={h} sx={{ color: "#fff", fontWeight: 700 }}>
-                  {h}
-                </TableCell>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Wallet}
+          label="Account Balance"
+          value={`INR ${stats.balance}`}
+          tone="mint"
+        />
+        <StatCard
+          icon={Landmark}
+          label="Primary Account"
+          value={stats.accountNumber}
+          tone="violet"
+        />
+        <StatCard
+          icon={ShieldAlert}
+          label="Fraud Flagged"
+          value={stats.fraudCount}
+          tone="rose"
+        />
+        <StatCard
+          icon={Activity}
+          label="Avg Risk Score"
+          value={`${stats.avgRisk}%`}
+          tone="cyan"
+        />
+      </section>
+
+      <section className="glass mt-7 rounded-2xl p-5">
+        <h2 className="font-display text-xl font-semibold text-white">
+          Recent Transactions
+        </h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead>
+              <tr className="text-left text-slate-400">
+                <th className="pb-3">Date</th>
+                <th className="pb-3">Receiver</th>
+                <th className="pb-3">Type</th>
+                <th className="pb-3">Amount</th>
+                <th className="pb-3">Risk</th>
+                <th className="pb-3">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/70">
+              {transactions.slice(0, 8).map((row) => (
+                <tr key={row.transaction_id} className="text-slate-200">
+                  <td className="py-3">
+                    {new Date(row.date).toLocaleString()}
+                  </td>
+                  <td className="py-3">{row.receiver}</td>
+                  <td className="py-3">{row.transaction_type}</td>
+                  <td className="py-3">INR {row.amount.toFixed(2)}</td>
+                  <td className="py-3">{(row.risk_score * 100).toFixed(1)}%</td>
+                  <td className="py-3">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                        row.prediction === "FRAUD"
+                          ? "bg-rose-500/20 text-rose-200"
+                          : "bg-emerald-500/20 text-emerald-200"
+                      }`}
+                    >
+                      {row.prediction}
+                    </span>
+                  </td>
+                </tr>
               ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} align="center">
-                  No transactions yet
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((row, idx) => (
-                <TableRow key={row.transaction_id} hover>
-                  <TableCell>{idx + 1}</TableCell>
-                  <TableCell sx={{ fontSize: 12 }}>
-                    {row.transaction_id.slice(0, 12)}…
-                  </TableCell>
-                  <TableCell>{row.username}</TableCell>
-                  <TableCell>
-                    {(row.fraud_probability * 100).toFixed(2)}%
-                  </TableCell>
-                  <TableCell>
-                    {(row.xgb_probability * 100).toFixed(2)}%
-                  </TableCell>
-                  <TableCell>
-                    {(row.isolation_score * 100).toFixed(2)}%
-                  </TableCell>
-                  <TableCell>{(row.final_score * 100).toFixed(2)}%</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={row.prediction}
-                      color={row.prediction === "FRAUD" ? "error" : "success"}
-                      size="small"
-                      sx={{ fontWeight: 700 }}
-                    />
-                  </TableCell>
-                  <TableCell sx={{ fontSize: 12 }}>
-                    {new Date(row.timestamp).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Container>
+              {!transactions.length && (
+                <tr>
+                  <td className="py-6 text-slate-400" colSpan={6}>
+                    No transactions available yet. Start with the Simulation
+                    page.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
   );
 }

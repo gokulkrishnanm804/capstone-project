@@ -1,127 +1,101 @@
-# Explainable AI Driven Secure Multi-Model System for Financial Fraud Detection
+# FraudGuard AI
 
-A full-stack application that combines **Random Forest**, **XGBoost**, and **Isolation Forest** models with a fusion layer and **SHAP-based Explainable AI** to detect financial fraud in real time.
+Simulation-Based Explainable Multi-Model Fraud Detection System.
 
-## Architecture
+This project now runs as a simulation-first banking platform:
 
-```
-┌────────────┐       ┌──────────────┐       ┌────────────────────┐
-│  React UI  │──API──│  FastAPI      │──ML──│  RF / XGB / ISO    │
-│  (Vite)    │       │  (JWT Auth)   │       │  + SHAP Explainer  │
-└────────────┘       └──────────────┘       └────────────────────┘
-```
+- Users perform realistic account-to-account transactions.
+- Backend converts simulation inputs into model feature vectors internally.
+- UI never exposes raw ML dataset columns like V1-V28.
 
-## Tech Stack
+## Stack
 
-| Layer          | Technology                                           |
-| -------------- | ---------------------------------------------------- |
-| Frontend       | React 19, Material UI, Recharts, Axios, React Router |
-| Backend        | FastAPI, Pydantic v2, JWT (python-jose)              |
-| ML Models      | Random Forest, XGBoost, Isolation Forest             |
-| Explainability | SHAP (TreeExplainer)                                 |
-| Dataset        | Kaggle Credit Card Fraud Detection (creditcard.csv)  |
+- Frontend: React 19, Vite, TailwindCSS, Framer Motion, Recharts, Axios
+- Backend: FastAPI, Pydantic v2, SQLAlchemy, JWT auth
+- Database: MySQL
+- Models: Random Forest, XGBoost, Isolation Forest
+- Explainability: SHAP
 
-## Fusion Layer
+## Core Fusion Logic
 
-```
-final_score = 0.4 * RF_probability + 0.4 * XGB_probability + 0.2 * ISO_score
-Prediction  = FRAUD if final_score > 0.5 else NORMAL
-```
+final_score = 0.4 _ RF + 0.4 _ XGB + 0.2 \* ISO
 
-## API Endpoints
+Prediction:
 
-| Method | Endpoint           | Description                                      |
-| ------ | ------------------ | ------------------------------------------------ |
-| POST   | `/register`        | Register a new user                              |
-| POST   | `/login`           | Authenticate and get JWT token                   |
-| POST   | `/predict`         | Submit transaction features for fraud prediction |
-| GET    | `/transactions`    | List recent prediction records                   |
-| GET    | `/fraud-analytics` | Admin analytics (totals, fraud %, charts)        |
+- FRAUD when score >= 0.5
+- SAFE when score < 0.5
 
-## Quick Start
+## Backend Setup
 
-### 1. Dataset
+1. Create MySQL database:
 
-Download `creditcard.csv` from Kaggle and place it in `backend/data/creditcard.csv`.
+   CREATE DATABASE fraudguard_ai;
 
-### 2. Backend
+2. Configure backend environment:
+   - Copy backend/.env.example to backend/.env
+   - Update DATABASE_URL and SECRET_KEY
 
-```bash
-cd backend
-python -m venv venv
+3. Install dependencies:
 
-# Windows
-.\venv\Scripts\activate
+   cd backend
+   python -m venv venv
+   .\venv\Scripts\activate
+   pip install -r requirements.txt
 
-# macOS/Linux
-source venv/bin/activate
+4. Place dataset:
 
-pip install -r requirements.txt
-```
+   Put creditcard.csv into backend/data/creditcard.csv
 
-### 3. Train Models
+5. Train models:
 
-```bash
-cd backend
-python train_models.py
-```
+   cd backend
+   python train_models.py
 
-This generates `rf.pkl`, `xgb.pkl`, `iso.pkl`, `scaler.pkl`, `metadata.json`, and `background.pkl` in `backend/models/`.
+6. Run API:
 
-### 4. Start Backend
+   cd backend
+   uvicorn app.main:app --reload
 
-```bash
-cd backend
-uvicorn app.main:app --reload
-```
+API docs: http://localhost:8000/docs
 
-Backend runs on `http://localhost:8000`. API docs at `http://localhost:8000/docs`.
+## Frontend Setup
 
-### 5. Frontend
-
-```bash
 cd frontend
 npm install
 npm run dev
-```
 
-Frontend runs on `http://localhost:5173`.
+Frontend URL: http://localhost:5173
 
-### Default Admin Account
+## Default Admin
 
-- Username: `admin`
-- Password: `Admin@123`
+- Email: admin@fraudguard.ai
+- Password: Admin@123
 
-## Project Structure
+## Main Frontend Routes
 
-```
-backend/
-  app/
-    main.py          # FastAPI app and routes
-    ml.py            # Model loading, fusion layer, SHAP explanations
-    auth.py          # JWT authentication
-    config.py        # Application settings
-    schemas.py       # Pydantic request/response models
-    storage.py       # JSON-based user & transaction storage
-  data/              # Place creditcard.csv here
-  models/            # Trained model artifacts (generated)
-  train_models.py    # ML training script
-  requirements.txt   # Python dependencies
+- / : Home
+- /login : Login
+- /register : Register
+- /dashboard : User dashboard
+- /simulate : Transaction simulation
+- /result : Prediction result
+- /history : Transaction history with filters
+- /admin : Admin dashboard (admin only)
+- /model-insight : Model architecture and SHAP insight page
 
-frontend/
-  src/
-    api.js           # Axios API client
-    AuthContext.jsx   # Authentication context provider
-    App.jsx          # Root component with routing
-    main.jsx         # Entry point
-    components/
-      Navbar.jsx     # Navigation bar
-      ProtectedRoute.jsx
-    pages/
-      HomePage.jsx
-      LoginPage.jsx
-      RegisterPage.jsx
-      FraudDetectionPage.jsx
-      DashboardPage.jsx
-      AdminDashboardPage.jsx
-```
+## Main Backend Endpoints
+
+- POST /register
+- POST /login
+- GET /me
+- GET /simulation/context
+- POST /simulation/transaction
+- GET /transactions
+- GET /fraud-analytics
+- GET /model-insights
+
+## Notes
+
+- Database tables are auto-created on backend startup.
+- Seed data includes a default admin account and external receiver accounts.
+- Simulation mode supports send and simulate actions from the same form.

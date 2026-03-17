@@ -1,59 +1,43 @@
-import { useState } from "react";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  AppBar,
-  Toolbar,
-  Typography,
-  Button,
-  Box,
-  IconButton,
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  useMediaQuery,
-  useTheme,
-} from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
-import HomeIcon from "@mui/icons-material/Home";
-import SecurityIcon from "@mui/icons-material/Security";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
-import LogoutIcon from "@mui/icons-material/Logout";
-import LoginIcon from "@mui/icons-material/Login";
+  BarChart3,
+  BrainCircuit,
+  History,
+  Home,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
 const NAV_ITEMS = [
-  { label: "Home", path: "/", icon: <HomeIcon /> },
+  { label: "Home", path: "/", icon: Home },
+  { label: "Dashboard", path: "/dashboard", icon: BarChart3, auth: true },
+  { label: "Simulation", path: "/simulate", icon: Sparkles, auth: true },
+  { label: "History", path: "/history", icon: History, auth: true },
   {
-    label: "Fraud Detection",
-    path: "/detect",
-    icon: <SecurityIcon />,
-    auth: true,
-  },
-  {
-    label: "Dashboard",
-    path: "/dashboard",
-    icon: <DashboardIcon />,
+    label: "Model Insight",
+    path: "/model-insight",
+    icon: BrainCircuit,
     auth: true,
   },
   {
     label: "Admin",
     path: "/admin",
-    icon: <AdminPanelSettingsIcon />,
+    icon: ShieldCheck,
     auth: true,
     role: "admin",
   },
 ];
 
 export default function Navbar() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.auth && !isAuthenticated) return false;
@@ -66,101 +50,119 @@ export default function Navbar() {
     navigate("/login");
   };
 
-  const drawer = (
-    <Box sx={{ width: 250 }} onClick={() => setDrawerOpen(false)}>
-      <List>
-        {visibleItems.map((item) => (
-          <ListItem key={item.path} disablePadding>
-            <ListItemButton component={RouterLink} to={item.path}>
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-        {isAuthenticated ? (
-          <ListItem disablePadding>
-            <ListItemButton onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon />
-              </ListItemIcon>
-              <ListItemText primary="Logout" />
-            </ListItemButton>
-          </ListItem>
-        ) : (
-          <ListItem disablePadding>
-            <ListItemButton component={RouterLink} to="/login">
-              <ListItemIcon>
-                <LoginIcon />
-              </ListItemIcon>
-              <ListItemText primary="Login" />
-            </ListItemButton>
-          </ListItem>
-        )}
-      </List>
-    </Box>
-  );
-
   return (
-    <>
-      <AppBar
-        position="sticky"
-        sx={{ background: "linear-gradient(90deg, #1a237e 0%, #0d47a1 100%)" }}
-      >
-        <Toolbar>
-          <SecurityIcon sx={{ mr: 1 }} />
-          <Typography
-            variant="h6"
-            sx={{ flexGrow: 1, fontWeight: 700, letterSpacing: 1 }}
-          >
-            FraudShield AI
-          </Typography>
+    <header className="sticky top-0 z-50 border-b border-cyan-200/20 bg-slate-950/70 backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+        <Link to="/" className="flex items-center gap-3">
+          <div className="rounded-xl border border-cyan-300/40 bg-cyan-400/10 p-2 shadow-neon">
+            <ShieldCheck className="h-5 w-5 text-cyan-200" />
+          </div>
+          <div>
+            <p className="font-display text-sm font-semibold text-cyan-100">
+              FraudGuard AI
+            </p>
+            <p className="text-xs text-slate-400">
+              Simulation-first banking defense
+            </p>
+          </div>
+        </Link>
 
-          {isMobile ? (
-            <IconButton color="inherit" onClick={() => setDrawerOpen(true)}>
-              <MenuIcon />
-            </IconButton>
+        <nav className="hidden items-center gap-1 md:flex">
+          {visibleItems.map((item) => {
+            const Icon = item.icon;
+            const active = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  active
+                    ? "bg-cyan-400/15 text-cyan-100"
+                    : "text-slate-300 hover:bg-slate-800/80 hover:text-white"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="hidden items-center gap-3 md:flex">
+          {isAuthenticated ? (
+            <>
+              <span className="text-sm text-slate-300">
+                {user?.name || user?.email}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleLogout}
+              >
+                <LogOut className="mr-2 h-4 w-4" /> Logout
+              </button>
+            </>
           ) : (
-            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            <Link to="/login" className="btn-primary">
+              <LogIn className="mr-2 h-4 w-4" /> Sign In
+            </Link>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="rounded-xl border border-cyan-300/30 px-3 py-2 text-cyan-100 md:hidden"
+          onClick={() => setOpen((old) => !old)}
+        >
+          Menu
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-cyan-200/20 bg-slate-950/90 md:hidden"
+          >
+            <div className="space-y-1 px-4 py-4">
               {visibleItems.map((item) => (
-                <Button
+                <Link
                   key={item.path}
-                  color="inherit"
-                  component={RouterLink}
                   to={item.path}
-                  startIcon={item.icon}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
                 >
                   {item.label}
-                </Button>
+                </Link>
               ))}
               {isAuthenticated ? (
-                <Button
-                  color="inherit"
-                  onClick={handleLogout}
-                  startIcon={<LogoutIcon />}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    handleLogout();
+                  }}
+                  className="block w-full rounded-lg bg-slate-800 px-3 py-2 text-left text-sm font-semibold text-slate-100"
                 >
                   Logout
-                </Button>
+                </button>
               ) : (
-                <Button
-                  color="inherit"
-                  component={RouterLink}
+                <Link
                   to="/login"
-                  startIcon={<LoginIcon />}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-lg bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950"
                 >
                   Login
-                </Button>
+                </Link>
               )}
-            </Box>
-          )}
-        </Toolbar>
-      </AppBar>
-      <Drawer
-        anchor="right"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      >
-        {drawer}
-      </Drawer>
-    </>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </header>
   );
 }

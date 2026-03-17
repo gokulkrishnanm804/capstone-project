@@ -1,40 +1,34 @@
-# FraudShield AI — Frontend
+# FraudGuard AI Frontend
 
-React-based frontend for the Explainable AI Driven Secure Multi-Model Financial Fraud Detection System.
+React + Vite frontend for simulation-based fraud detection.
 
-## Tech Stack
+## Tech
 
-- React 19 + Vite
-- React Router DOM
-- Material UI (MUI)
-- Axios
+- React 19
+- React Router
+- TailwindCSS
+- Framer Motion
 - Recharts
+- Axios
 
-## Pages
+## Routes
 
-| Route        | Page                | Auth Required |
-| ------------ | ------------------- | ------------- |
-| `/`          | Home                | No            |
-| `/login`     | Login               | No            |
-| `/register`  | Register            | No            |
-| `/detect`    | Fraud Detection     | Yes           |
-| `/dashboard` | Transaction History | Yes           |
-| `/admin`     | Admin Analytics     | Yes (admin)   |
+- / : Home
+- /login : Login
+- /register : Register
+- /dashboard : User dashboard
+- /simulate : Transaction simulation
+- /result : Prediction result
+- /history : Transaction history
+- /admin : Admin analytics dashboard
+- /model-insight : Model insight and fusion explanation
 
-## Getting Started
+## Run
 
-```bash
 cd frontend
 npm install
 npm run dev
-```
-
-The dev server runs on `http://localhost:5173` by default.
 
 ## Build
 
-```bash
 npm run build
-```
-
-Output is in the `dist/` folder.

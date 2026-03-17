@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 
 const AuthContext = createContext(null);
 
@@ -24,15 +24,14 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const isAuthenticated = !!token;
+  const isAuthenticated = Boolean(token);
 
-  return (
-    <AuthContext.Provider
-      value={{ user, token, isAuthenticated, loginUser, logout }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, token, isAuthenticated, loginUser, logout }),
+    [user, token, isAuthenticated],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

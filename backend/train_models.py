@@ -33,18 +33,23 @@ def load_dataset(path: Path) -> pd.DataFrame:
 
 
 def preprocess(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
-    if "isFraud" not in df.columns:
-        raise ValueError("Dataset must contain an 'isFraud' column.")
+    target_col = None
+    if "isFraud" in df.columns:
+        target_col = "isFraud"
+    elif "Class" in df.columns:
+        target_col = "Class"
+    if target_col is None:
+        raise ValueError("Dataset must contain either 'isFraud' or 'Class'.")
 
     # Drop identifier / non-numeric columns
-    drop_cols = [c for c in ["nameOrig", "nameDest", "isFraud"] if c in df.columns]
+    drop_cols = [c for c in ["nameOrig", "nameDest", target_col] if c in df.columns]
     X = df.drop(columns=drop_cols)
 
-    # One-hot encode the 'type' column
+    # One-hot encode transaction type when available
     if "type" in X.columns:
         X = pd.get_dummies(X, columns=["type"], prefix="type")
 
-    y = df["isFraud"]
+    y = df[target_col]
     return X, y
 
 
@@ -115,10 +120,21 @@ def train_models() -> None:
     iso.fit(X_full_scaled)
     joblib.dump(iso, MODEL_DIR / "iso.pkl")
 
+    feature_stats = {
+        column: {
+            "mean": float(X[column].mean()),
+            "std": float(X[column].std() if not np.isnan(X[column].std()) else 0.0),
+            "min": float(X[column].min()),
+            "max": float(X[column].max()),
+        }
+        for column in X.columns
+    }
+
     metadata = {
         "feature_columns": list(X.columns),
         "train_shape": list(X_train.shape),
         "test_shape": list(X_test.shape),
+        "feature_stats": feature_stats,
     }
     (MODEL_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2))
 

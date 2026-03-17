@@ -1,113 +1,138 @@
+import { motion } from "framer-motion";
+import { UserRoundPlus } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
-import {
-  Container,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  Box,
-  CircularProgress,
-  MenuItem,
-} from "@mui/material";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
-import { register as apiRegister } from "../api";
+import { Link, useNavigate } from "react-router-dom";
+import { register } from "../api";
+import { getApiErrorMessage } from "../utils/apiError";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    username: "",
+    name: "",
+    email: "",
     password: "",
     role: "user",
   });
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
+    setError("");
     try {
-      await apiRegister(form);
+      await register(form);
       navigate("/login");
     } catch (err) {
-      setError(err.response?.data?.detail || "Registration failed");
+      setError(
+        getApiErrorMessage(err, "Unable to register with provided details."),
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 10 }}>
-      <Paper elevation={6} sx={{ p: 5, borderRadius: 3, textAlign: "center" }}>
-        <PersonAddIcon sx={{ fontSize: 48, color: "primary.main", mb: 1 }} />
-        <Typography variant="h4" fontWeight={700} gutterBottom>
-          Create Account
-        </Typography>
-        <Typography variant="body2" color="text.secondary" mb={3}>
-          Register to access the system
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <Box component="form" onSubmit={handleSubmit}>
-          <TextField
-            label="Username"
-            name="username"
-            fullWidth
-            required
-            margin="normal"
-            value={form.username}
-            onChange={handleChange}
-            inputProps={{ minLength: 3, maxLength: 50 }}
-          />
-          <TextField
-            label="Password"
-            name="password"
-            type="password"
-            fullWidth
-            required
-            margin="normal"
-            value={form.password}
-            onChange={handleChange}
-            inputProps={{ minLength: 6, maxLength: 128 }}
-          />
-          <TextField
-            label="Role"
-            name="role"
-            select
-            fullWidth
-            margin="normal"
-            value={form.role}
-            onChange={handleChange}
-          >
-            <MenuItem value="user">User</MenuItem>
-            <MenuItem value="admin">Admin</MenuItem>
-          </TextField>
-          <Button
+    <main className="mx-auto flex min-h-[calc(100vh-72px)] max-w-7xl items-center px-4 py-10 sm:px-6 lg:px-8">
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass mx-auto w-full max-w-lg rounded-3xl p-8"
+      >
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 inline-flex rounded-xl border border-cyan-300/40 bg-cyan-500/10 p-3">
+            <UserRoundPlus className="h-6 w-6 text-cyan-100" />
+          </div>
+          <h1 className="font-display text-2xl font-bold text-white">
+            Create Your FraudGuard Account
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Get your simulated banking account in seconds.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Full name
+            </label>
+            <input
+              className="input-dark"
+              value={form.name}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, name: event.target.value }))
+              }
+              minLength={2}
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Email
+            </label>
+            <input
+              type="email"
+              className="input-dark"
+              value={form.email}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, email: event.target.value }))
+              }
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Password
+            </label>
+            <input
+              type="password"
+              className="input-dark"
+              value={form.password}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, password: event.target.value }))
+              }
+              minLength={8}
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Role
+            </label>
+            <select
+              className="input-dark"
+              value={form.role}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, role: event.target.value }))
+              }
+            >
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          {error && (
+            <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">
+              {error}
+            </p>
+          )}
+
+          <button
             type="submit"
-            variant="contained"
-            fullWidth
-            size="large"
+            className="btn-primary w-full"
             disabled={loading}
-            sx={{ mt: 2, py: 1.5, fontWeight: 700 }}
           >
-            {loading ? <CircularProgress size={24} /> : "Register"}
-          </Button>
-        </Box>
-        <Typography variant="body2" sx={{ mt: 3 }}>
+            {loading ? "Creating account..." : "Register"}
+          </button>
+        </form>
+
+        <p className="mt-5 text-center text-sm text-slate-300">
           Already have an account?{" "}
-          <RouterLink to="/login" style={{ color: "#1a237e", fontWeight: 600 }}>
-            Sign In
-          </RouterLink>
-        </Typography>
-      </Paper>
-    </Container>
+          <Link to="/login" className="font-semibold text-cyan-200">
+            Sign in
+          </Link>
+        </p>
+      </motion.section>
+    </main>
   );
 }

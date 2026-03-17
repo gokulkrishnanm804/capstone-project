@@ -1,103 +1,106 @@
+import { motion } from "framer-motion";
+import { LogIn } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
-import {
-  Container,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  Box,
-  CircularProgress,
-} from "@mui/material";
-import LockIcon from "@mui/icons-material/Lock";
-import { login as apiLogin } from "../api";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { login } from "../api";
+import { getApiErrorMessage } from "../utils/apiError";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { loginUser } = useAuth();
-  const [form, setForm] = useState({ username: "", password: "" });
-  const [error, setError] = useState("");
+  const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
+    setError("");
     try {
-      const res = await apiLogin(form);
-      const token = res.data.access_token;
-      // Decode JWT payload to extract role
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      loginUser(token, { username: payload.sub, role: payload.role });
-      navigate("/");
+      const response = await login(form);
+      loginUser(response.data.access_token, response.data.user);
+      navigate("/dashboard");
     } catch (err) {
-      setError(err.response?.data?.detail || "Login failed");
+      setError(
+        getApiErrorMessage(err, "Unable to login with those credentials."),
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 10 }}>
-      <Paper elevation={6} sx={{ p: 5, borderRadius: 3, textAlign: "center" }}>
-        <LockIcon sx={{ fontSize: 48, color: "primary.main", mb: 1 }} />
-        <Typography variant="h4" fontWeight={700} gutterBottom>
-          Sign In
-        </Typography>
-        <Typography variant="body2" color="text.secondary" mb={3}>
-          Access the Fraud Detection System
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <Box component="form" onSubmit={handleSubmit}>
-          <TextField
-            label="Username"
-            name="username"
-            fullWidth
-            required
-            margin="normal"
-            value={form.username}
-            onChange={handleChange}
-          />
-          <TextField
-            label="Password"
-            name="password"
-            type="password"
-            fullWidth
-            required
-            margin="normal"
-            value={form.password}
-            onChange={handleChange}
-          />
-          <Button
+    <main className="mx-auto flex min-h-[calc(100vh-72px)] max-w-7xl items-center px-4 py-10 sm:px-6 lg:px-8">
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass mx-auto w-full max-w-md rounded-3xl p-8"
+      >
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 inline-flex rounded-xl border border-cyan-300/40 bg-cyan-500/10 p-3">
+            <LogIn className="h-6 w-6 text-cyan-100" />
+          </div>
+          <h1 className="font-display text-2xl font-bold text-white">
+            Welcome Back
+          </h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Sign in to continue your transaction simulation.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Email
+            </label>
+            <input
+              type="email"
+              className="input-dark"
+              value={form.email}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, email: event.target.value }))
+              }
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-300">
+              Password
+            </label>
+            <input
+              type="password"
+              className="input-dark"
+              value={form.password}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, password: event.target.value }))
+              }
+              required
+            />
+          </div>
+
+          {error && (
+            <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">
+              {error}
+            </p>
+          )}
+
+          <button
             type="submit"
-            variant="contained"
-            fullWidth
-            size="large"
+            className="btn-primary w-full"
             disabled={loading}
-            sx={{ mt: 2, py: 1.5, fontWeight: 700 }}
           >
-            {loading ? <CircularProgress size={24} /> : "Login"}
-          </Button>
-        </Box>
-        <Typography variant="body2" sx={{ mt: 3 }}>
-          Don't have an account?{" "}
-          <RouterLink
-            to="/register"
-            style={{ color: "#1a237e", fontWeight: 600 }}
-          >
-            Register
-          </RouterLink>
-        </Typography>
-      </Paper>
-    </Container>
+            {loading ? "Signing in..." : "Sign In"}
+          </button>
+        </form>
+
+        <p className="mt-5 text-center text-sm text-slate-300">
+          New here?{" "}
+          <Link to="/register" className="font-semibold text-cyan-200">
+            Create account
+          </Link>
+        </p>
+      </motion.section>
+    </main>
   );
 }

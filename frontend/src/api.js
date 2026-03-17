@@ -24,9 +24,12 @@ API.interceptors.response.use(
 
 export const register = (data) => API.post("/register", data);
 export const login = (data) => API.post("/login", data);
-export const predict = (data) => API.post("/predict", data);
-export const getTransactions = () => API.get("/transactions");
+export const getProfile = () => API.get("/me");
+export const getSimulationContext = () => API.get("/simulation/context");
+export const runSimulationTransaction = (data) =>
+  API.post("/simulation/transaction", data);
+export const getTransactions = (params) => API.get("/transactions", { params });
 export const getFraudAnalytics = () => API.get("/fraud-analytics");
-export const getFeatures = () => API.get("/features");
+export const getModelInsights = () => API.get("/model-insights");
 
 export default API;

@@ -1,315 +1,299 @@
-import { useState, useEffect } from "react";
-import {
-  Container,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-  Grid,
-  Alert,
-  CircularProgress,
-  Box,
-  Chip,
-  Divider,
-  Card,
-  CardContent,
-  MenuItem,
-} from "@mui/material";
-import SecurityIcon from "@mui/icons-material/Security";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
-import { predict, getFeatures } from "../api";
+import { motion } from "framer-motion";
+import { AlertTriangle, SendHorizonal } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getSimulationContext, runSimulationTransaction } from "../api";
+import { getApiErrorMessage } from "../utils/apiError";
 
-// Human-friendly labels for the raw PaySim numeric fields
-const FRIENDLY_LABELS = {
-  step: "Time Step (hours)",
-  amount: "Transaction Amount",
-  oldbalanceOrg: "Sender Old Balance",
-  newbalanceOrig: "Sender New Balance",
-  oldbalanceDest: "Receiver Old Balance",
-  newbalanceDest: "Receiver New Balance",
-  isFlaggedFraud: "Flagged Fraud (0/1)",
+const transactionTypes = ["UPI", "CARD", "TRANSFER"];
+const locationOptions = [
+  "Delhi",
+  "Mumbai",
+  "Bengaluru",
+  "Kolkata",
+  "Hyderabad",
+  "Chennai",
+  "Jaipur",
+];
+const deviceOptions = ["Mobile", "Desktop", "Tablet", "POS"];
+const transactionTypeToModelType = {
+  UPI: "PAYMENT",
+  CARD: "DEBIT",
+  TRANSFER: "TRANSFER",
 };
 
-// Transaction types — the training script one-hot encodes these
-const TRANSACTION_TYPES = [
-  "CASH_IN",
-  "CASH_OUT",
-  "DEBIT",
-  "PAYMENT",
-  "TRANSFER",
-];
-
 export default function FraudDetectionPage() {
-  const [featureColumns, setFeatureColumns] = useState([]);
-  const [form, setForm] = useState({});
-  const [txnType, setTxnType] = useState("TRANSFER");
-  const [result, setResult] = useState(null);
+  const navigate = useNavigate();
+  const [context, setContext] = useState(null);
+  const [loadingContext, setLoadingContext] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [featuresLoading, setFeaturesLoading] = useState(true);
-
-  // Separate type_* columns from raw numeric input fields
-  const typeColumns = featureColumns.filter((f) => f.startsWith("type_"));
-  const numericColumns = featureColumns.filter((f) => !f.startsWith("type_"));
+  const [form, setForm] = useState({
+    sender_account: "",
+    receiver_account: "",
+    amount: "",
+    transaction_type: "TRANSFER",
+    location: "Delhi",
+    device_type: "Mobile",
+  });
 
   useEffect(() => {
-    getFeatures()
+    getSimulationContext()
       .then((res) => {
-        const cols = res.data.features;
-        setFeatureColumns(cols);
-        const init = {};
-        cols
-          .filter((c) => !c.startsWith("type_"))
-          .forEach((c) => (init[c] = ""));
-        setForm(init);
+        const data = res.data;
+        setContext(data);
+        setForm((old) => ({
+          ...old,
+          sender_account: data.sender_account.account_number,
+          receiver_account: data.receivers[0]?.account_number || "",
+          location: data.known_locations[0] || "Delhi",
+          device_type: data.known_devices[0] || "Mobile",
+        }));
       })
-      .catch(() =>
-        setError("Could not load model features. Is the backend running?"),
-      )
-      .finally(() => setFeaturesLoading(false));
+      .catch((err) => {
+        setError(getApiErrorMessage(err, "Unable to load simulation context."));
+      })
+      .finally(() => setLoadingContext(false));
   }, []);
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const validateForm = () => {
+    if (!form.sender_account) {
+      return "Sender account is missing. Please refresh simulation context.";
+    }
+    if (!form.receiver_account) {
+      return "Please select a receiver account.";
+    }
+    const amountValue = Number(form.amount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      return "Please enter an amount greater than 0.";
+    }
+    return null;
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const onSubmit = async (mode) => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSubmitting(true);
     setError("");
-    setResult(null);
-    setLoading(true);
     try {
-      // Build features dict: numeric fields + one-hot type columns
-      const features = {};
-      numericColumns.forEach((f) => (features[f] = parseFloat(form[f]) || 0));
-      typeColumns.forEach((col) => {
-        // col is like "type_TRANSFER" — set 1.0 if matches selected type
-        features[col] = col === `type_${txnType}` ? 1.0 : 0.0;
+      const response = await runSimulationTransaction({
+        ...form,
+        amount: Number(form.amount),
+        transaction_type:
+          transactionTypeToModelType[form.transaction_type] ||
+          form.transaction_type,
+        mode,
       });
-      const res = await predict({ features });
-      setResult(res.data);
+      localStorage.setItem("last_prediction", JSON.stringify(response.data));
+      navigate("/result", { state: { result: response.data } });
     } catch (err) {
-      setError(err.response?.data?.detail || "Prediction failed");
+      setError(getApiErrorMessage(err, "Transaction simulation failed."));
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const handleReset = () => {
-    const init = {};
-    numericColumns.forEach((c) => (init[c] = ""));
-    setForm(init);
-    setTxnType("TRANSFER");
-    setResult(null);
-    setError("");
-  };
-
-  if (featuresLoading)
+  if (loadingContext) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 10 }}>
-        <CircularProgress />
-      </Box>
+      <div className="px-6 py-16 text-center text-slate-300">
+        Loading simulation engine...
+      </div>
     );
+  }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 6 }}>
-      <Typography
-        variant="h4"
-        fontWeight={700}
-        gutterBottom
-        sx={{ display: "flex", alignItems: "center", gap: 1 }}
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass rounded-3xl p-6 sm:p-8"
       >
-        <SecurityIcon color="primary" fontSize="large" /> Fraud Detection
-      </Typography>
-      <Typography variant="body1" color="text.secondary" mb={3}>
-        Enter transaction features below and click Analyze to detect fraud.
-      </Typography>
+        <h1 className="font-display text-3xl font-bold text-white">
+          Transaction Simulation
+        </h1>
+        <p className="mt-2 text-slate-300">
+          Execute a normal transfer or trigger fraud simulation rules from one
+          controlled workflow.
+        </p>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+        {error && (
+          <p className="mt-4 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-200">
+            {error}
+          </p>
+        )}
 
-      <Paper elevation={3} sx={{ p: 4, borderRadius: 3, mb: 4 }}>
-        <Box component="form" onSubmit={handleSubmit}>
-          <Grid container spacing={2}>
-            {/* Transaction type selector */}
-            {typeColumns.length > 0 && (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-                <TextField
-                  label="Transaction Type"
-                  select
-                  fullWidth
-                  size="small"
-                  value={txnType}
-                  onChange={(e) => setTxnType(e.target.value)}
-                >
-                  {TRANSACTION_TYPES.map((t) => (
-                    <MenuItem key={t} value={t}>
-                      {t}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-            )}
-            {/* Numeric input fields */}
-            {numericColumns.map((field) => (
-              <Grid size={{ xs: 6, sm: 4, md: 3 }} key={field}>
-                <TextField
-                  label={FRIENDLY_LABELS[field] || field}
-                  name={field}
-                  type="number"
-                  size="small"
-                  fullWidth
-                  value={form[field]}
-                  onChange={handleChange}
-                  inputProps={{ step: "any" }}
-                />
-              </Grid>
-            ))}
-          </Grid>
-          <Box sx={{ mt: 3, display: "flex", gap: 2 }}>
-            <Button
-              type="submit"
-              variant="contained"
-              size="large"
-              disabled={loading}
-              sx={{ fontWeight: 700 }}
+        <form
+          className="mt-6 grid gap-4 md:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit("send");
+          }}
+        >
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">
+              From Account
+            </label>
+            <input
+              className="input-dark"
+              value={form.sender_account}
+              disabled
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">
+              To Account
+            </label>
+            <select
+              className="input-dark"
+              value={form.receiver_account}
+              required
+              onChange={(event) =>
+                setForm((old) => ({
+                  ...old,
+                  receiver_account: event.target.value,
+                }))
+              }
             >
-              {loading ? <CircularProgress size={24} /> : "Analyze Transaction"}
-            </Button>
-            <Button variant="outlined" size="large" onClick={handleReset}>
-              Reset
-            </Button>
-          </Box>
-        </Box>
-      </Paper>
+              {!context?.receivers?.length && (
+                <option value="">No receivers available</option>
+              )}
+              {context?.receivers?.map((receiver) => (
+                <option
+                  key={receiver.account_number}
+                  value={receiver.account_number}
+                >
+                  {receiver.owner_name} ({receiver.account_number})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">
+              Amount (INR)
+            </label>
+            <input
+              className="input-dark"
+              type="number"
+              min="1"
+              step="0.01"
+              required
+              value={form.amount}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, amount: event.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">
+              Transaction Type
+            </label>
+            <select
+              className="input-dark"
+              value={form.transaction_type}
+              onChange={(event) =>
+                setForm((old) => ({
+                  ...old,
+                  transaction_type: event.target.value,
+                }))
+              }
+            >
+              {transactionTypes.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">
+              Location
+            </label>
+            <select
+              className="input-dark"
+              value={form.location}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, location: event.target.value }))
+              }
+            >
+              {[
+                ...new Set([
+                  ...(context?.known_locations || []),
+                  ...locationOptions,
+                ]),
+              ].map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Device</label>
+            <select
+              className="input-dark"
+              value={form.device_type}
+              onChange={(event) =>
+                setForm((old) => ({ ...old, device_type: event.target.value }))
+              }
+            >
+              {[
+                ...new Set([
+                  ...(context?.known_devices || []),
+                  ...deviceOptions,
+                ]),
+              ].map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      {result && <PredictionResult data={result} />}
-    </Container>
+          <div className="md:col-span-2 mt-2 flex flex-wrap gap-3">
+            <button type="submit" className="btn-primary" disabled={submitting}>
+              <SendHorizonal className="mr-2 h-4 w-4" />
+              {submitting ? "Processing..." : "Send Money"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => onSubmit("simulate")}
+              disabled={submitting}
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              {submitting ? "Simulating..." : "Simulate Fraud"}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          <InfoTile
+            label="Balance"
+            value={`INR ${context?.sender_account?.balance?.toFixed(2) || "0.00"}`}
+          />
+          <InfoTile
+            label="Known Devices"
+            value={(context?.known_devices || []).join(", ") || "Mobile"}
+          />
+          <InfoTile
+            label="Known Locations"
+            value={(context?.known_locations || []).join(", ")}
+          />
+        </div>
+      </motion.section>
+    </main>
   );
 }
 
-function PredictionResult({ data }) {
-  const isFraud = data.prediction === "FRAUD";
-  const chartData = (data.feature_importance || []).map((item) => ({
-    name: item.feature,
-    value: Math.abs(item.contribution),
-    raw: item.contribution,
-  }));
-
+function InfoTile({ label, value }) {
   return (
-    <>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Prediction Result
-      </Typography>
-
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card
-            elevation={4}
-            sx={{
-              borderRadius: 3,
-              borderLeft: `6px solid ${isFraud ? "#d32f2f" : "#2e7d32"}`,
-            }}
-          >
-            <CardContent sx={{ textAlign: "center" }}>
-              <Typography variant="subtitle2" color="text.secondary">
-                Prediction
-              </Typography>
-              <Chip
-                label={data.prediction}
-                color={isFraud ? "error" : "success"}
-                sx={{ mt: 1, fontWeight: 700, fontSize: 18, px: 3, py: 2.5 }}
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card elevation={4} sx={{ borderRadius: 3 }}>
-            <CardContent sx={{ textAlign: "center" }}>
-              <Typography variant="subtitle2" color="text.secondary">
-                Final Fusion Score
-              </Typography>
-              <Typography
-                variant="h4"
-                fontWeight={700}
-                color={isFraud ? "error" : "success.main"}
-                sx={{ mt: 1 }}
-              >
-                {(data.final_score * 100).toFixed(2)}%
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card elevation={4} sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                gutterBottom
-              >
-                Model Scores
-              </Typography>
-              <Typography variant="body2">
-                Random Forest:{" "}
-                <strong>
-                  {(data.random_forest_probability * 100).toFixed(2)}%
-                </strong>
-              </Typography>
-              <Typography variant="body2">
-                XGBoost:{" "}
-                <strong>{(data.xgboost_probability * 100).toFixed(2)}%</strong>
-              </Typography>
-              <Typography variant="body2">
-                Isolation Forest:{" "}
-                <strong>
-                  {(data.isolation_forest_score * 100).toFixed(2)}%
-                </strong>
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Divider sx={{ mb: 3 }} />
-
-      <Typography variant="h5" fontWeight={700} gutterBottom>
-        Explainable AI — Feature Importance (SHAP)
-      </Typography>
-      <Paper elevation={3} sx={{ p: 3, borderRadius: 3 }}>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={chartData} layout="vertical" margin={{ left: 60 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" />
-            <YAxis type="category" dataKey="name" width={50} />
-            <Tooltip formatter={(v) => v.toFixed(6)} />
-            <Bar dataKey="value" name="SHAP Contribution">
-              {chartData.map((entry, idx) => (
-                <Cell key={idx} fill={entry.raw >= 0 ? "#d32f2f" : "#2e7d32"} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ mt: 1, display: "block" }}
-        >
-          Red = pushes toward fraud, Green = pushes toward normal. Top 10 most
-          important features shown.
-        </Typography>
-      </Paper>
-    </>
+    <div className="rounded-xl border border-slate-700/70 bg-slate-900/45 p-4">
+      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-2 text-sm text-slate-200">{value}</p>
+    </div>
   );
 }
