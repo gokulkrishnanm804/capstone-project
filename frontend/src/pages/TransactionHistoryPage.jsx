@@ -9,7 +9,7 @@ export default function TransactionHistoryPage() {
   const [filters, setFilters] = useState({
     fraud_only: false,
     start_date: "",
-    end_date: "",
+    direction: "ALL",
   });
 
   const fetchRows = async (params) => {
@@ -33,7 +33,7 @@ export default function TransactionHistoryPage() {
     fetchRows({
       fraud_only: filters.fraud_only,
       start_date: filters.start_date || undefined,
-      end_date: filters.end_date || undefined,
+      direction: filters.direction === "ALL" ? undefined : filters.direction,
     });
   };
 
@@ -43,7 +43,7 @@ export default function TransactionHistoryPage() {
         Transaction History
       </h1>
       <p className="mt-1 text-slate-300">
-        Filter your transactions by fraud status and date range.
+        Filter your transactions by fraud status, date, and money flow.
       </p>
 
       <section className="glass mt-6 rounded-2xl p-5">
@@ -69,14 +69,17 @@ export default function TransactionHistoryPage() {
               setFilters((old) => ({ ...old, start_date: event.target.value }))
             }
           />
-          <input
-            type="date"
+          <select
             className="input-dark"
-            value={filters.end_date}
+            value={filters.direction}
             onChange={(event) =>
-              setFilters((old) => ({ ...old, end_date: event.target.value }))
+              setFilters((old) => ({ ...old, direction: event.target.value }))
             }
-          />
+          >
+            <option value="ALL">All Transactions</option>
+            <option value="CREDIT">Money Added (+)</option>
+            <option value="DEBIT">Money Debited (-)</option>
+          </select>
           <button type="button" className="btn-primary" onClick={applyFilters}>
             Apply Filters
           </button>
@@ -97,7 +100,7 @@ export default function TransactionHistoryPage() {
             <thead>
               <tr className="text-left text-slate-400">
                 <th className="pb-3">Date</th>
-                <th className="pb-3">Receiver</th>
+                <th className="pb-3">Counterparty</th>
                 <th className="pb-3">Amount</th>
                 <th className="pb-3">Type</th>
                 <th className="pb-3">Location</th>
@@ -112,8 +115,24 @@ export default function TransactionHistoryPage() {
                   <td className="py-3">
                     {new Date(row.date).toLocaleString()}
                   </td>
-                  <td className="py-3">{row.receiver}</td>
-                  <td className="py-3">INR {row.amount.toFixed(2)}</td>
+                  <td className="py-3">{row.counterparty}</td>
+                  <td className="py-3">
+                    <p
+                      className={`font-semibold ${
+                        row.direction === "CREDIT"
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                      }`}
+                    >
+                      {row.direction === "CREDIT" ? "+" : "-"} INR{" "}
+                      {row.amount.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {row.direction === "CREDIT"
+                        ? "Money Added"
+                        : "Money Debited"}
+                    </p>
+                  </td>
                   <td className="py-3">{row.transaction_type}</td>
                   <td className="py-3">{row.location}</td>
                   <td className="py-3">{row.device_type}</td>

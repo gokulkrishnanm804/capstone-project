@@ -2,7 +2,7 @@ You are an expert full-stack developer, UI/UX designer, and AI engineer.
 
 Build a COMPLETE production-style web application:
 
-"FraudGuard AI – Simulation-Based Explainable Multi-Model Fraud Detection System"
+"SentinelPay – Simulation-Based Explainable Multi-Model Fraud Detection System"
 
 The system must simulate real-world banking transactions instead of exposing raw dataset fields.
 

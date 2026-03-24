@@ -1,4 +1,4 @@
-# FraudGuard AI
+# SentinelPay
 
 Simulation-Based Explainable Multi-Model Fraud Detection System.
 
@@ -18,7 +18,7 @@ This project now runs as a simulation-first banking platform:
 
 ## Core Fusion Logic
 
-final_score = 0.4 _ RF + 0.4 _ XGB + 0.2 \* ISO
+final*score = 0.4 * RF + 0.4 \_ XGB + 0.2 \* ISO
 
 Prediction:
 

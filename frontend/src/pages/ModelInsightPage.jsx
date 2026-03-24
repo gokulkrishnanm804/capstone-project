@@ -37,7 +37,7 @@ export default function ModelInsightPage() {
           Model Insight
         </h1>
         <p className="mt-1 text-slate-300">
-          How supervised and unsupervised intelligence combine in FraudGuard AI.
+          How supervised and unsupervised intelligence combine in SentinelPay.
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">

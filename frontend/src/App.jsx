@@ -3,14 +3,21 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminCaseReviewPage from "./pages/AdminCaseReviewPage";
+import AnalystAnsweredQueriesPage from "./pages/AnalystAnsweredQueriesPage";
+import AnalystCaseQueuePage from "./pages/AnalystCaseQueuePage";
+import AnalystPendingQueriesPage from "./pages/AnalystPendingQueriesPage";
+import AnalystTransactionExplainablePage from "./pages/AnalystTransactionExplainablePage";
+import AnalystTransactionsPage from "./pages/AnalystTransactionsPage";
 import DashboardPage from "./pages/DashboardPage";
 import FraudDetectionPage from "./pages/FraudDetectionPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
-import ModelInsightPage from "./pages/ModelInsightPage";
 import PredictionResultPage from "./pages/PredictionResultPage";
 import RegisterPage from "./pages/RegisterPage";
+import RewardsPage from "./pages/RewardsPage";
 import TransactionHistoryPage from "./pages/TransactionHistoryPage";
+import UserFraudQueriesPage from "./pages/UserFraudQueriesPage";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -68,7 +75,7 @@ export default function App() {
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
                 <AnimatedPage>
                   <DashboardPage />
                 </AnimatedPage>
@@ -78,7 +85,7 @@ export default function App() {
           <Route
             path="/simulate"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
                 <AnimatedPage>
                   <FraudDetectionPage />
                 </AnimatedPage>
@@ -88,7 +95,7 @@ export default function App() {
           <Route
             path="/result"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
                 <AnimatedPage>
                   <PredictionResultPage />
                 </AnimatedPage>
@@ -98,7 +105,7 @@ export default function App() {
           <Route
             path="/history"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
                 <AnimatedPage>
                   <TransactionHistoryPage />
                 </AnimatedPage>
@@ -106,11 +113,21 @@ export default function App() {
             }
           />
           <Route
-            path="/model-insight"
+            path="/rewards"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
                 <AnimatedPage>
-                  <ModelInsightPage />
+                  <RewardsPage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-fraud-queries"
+            element={
+              <ProtectedRoute requiredRole="user">
+                <AnimatedPage>
+                  <UserFraudQueriesPage />
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -121,6 +138,66 @@ export default function App() {
               <ProtectedRoute requiredRole="admin">
                 <AnimatedPage>
                   <AdminDashboardPage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analyst/cases"
+            element={
+              <ProtectedRoute requiredRole="analyst">
+                <AnimatedPage>
+                  <AnalystCaseQueuePage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analyst/answered-queries"
+            element={
+              <ProtectedRoute requiredRole="analyst">
+                <AnimatedPage>
+                  <AnalystAnsweredQueriesPage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analyst/pending-queries"
+            element={
+              <ProtectedRoute requiredRole="analyst">
+                <AnimatedPage>
+                  <AnalystPendingQueriesPage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analyst/transactions"
+            element={
+              <ProtectedRoute requiredRole={["analyst", "admin"]}>
+                <AnimatedPage>
+                  <AnalystTransactionsPage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analyst/transactions/:transactionId"
+            element={
+              <ProtectedRoute requiredRole={["analyst", "admin"]}>
+                <AnimatedPage>
+                  <AnalystTransactionExplainablePage />
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/cases"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <AdminCaseReviewPage />
                 </AnimatedPage>
               </ProtectedRoute>
             }

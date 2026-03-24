@@ -11,13 +11,17 @@ export default function RegisterPage() {
     name: "",
     email: "",
     password: "",
-    role: "user",
+    upi_pin: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!/^\d{4,6}$/.test(form.upi_pin)) {
+      setError("UPI PIN must be 4 to 6 digits.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -44,7 +48,7 @@ export default function RegisterPage() {
             <UserRoundPlus className="h-6 w-6 text-cyan-100" />
           </div>
           <h1 className="font-display text-2xl font-bold text-white">
-            Create Your FraudGuard Account
+            Create Your SentinelPay Account
           </h1>
           <p className="mt-1 text-sm text-slate-400">
             Get your simulated banking account in seconds.
@@ -97,20 +101,25 @@ export default function RegisterPage() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-300">
-              Role
+              UPI PIN (4-6 digits)
             </label>
-            <select
+            <input
+              type="password"
               className="input-dark"
-              value={form.role}
+              value={form.upi_pin}
               onChange={(event) =>
-                setForm((old) => ({ ...old, role: event.target.value }))
+                setForm((old) => ({ ...old, upi_pin: event.target.value }))
               }
-            >
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-            </select>
+              inputMode="numeric"
+              pattern="[0-9]{4,6}"
+              minLength={4}
+              maxLength={6}
+              required
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              This PIN is used only to authorize Send Money transactions.
+            </p>
           </div>
-
           {error && (
             <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">
               {error}

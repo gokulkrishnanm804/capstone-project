@@ -1,4 +1,4 @@
-# FraudShield AI — Copilot Instructions
+# SentinelPay — Copilot Instructions
 
 ## Project Overview
 

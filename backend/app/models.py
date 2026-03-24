@@ -15,7 +15,12 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
+    upi_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user")
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    blocked_reason: Mapped[str] = mapped_column(Text, default="")
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    blocked_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     accounts: Mapped[list[Account]] = relationship("Account", back_populates="owner")
@@ -56,6 +61,7 @@ class Transaction(Base):
     sender_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     receiver_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     amount: Mapped[float] = mapped_column(Float)
+    cashback_amount: Mapped[float] = mapped_column(Float, default=0.0)
     transaction_type: Mapped[str] = mapped_column(String(30))
     location: Mapped[str] = mapped_column(String(120))
     device_type: Mapped[str] = mapped_column(String(30))
@@ -84,4 +90,49 @@ class Transaction(Base):
         "Account",
         back_populates="incoming_transactions",
         foreign_keys=[receiver_account_id],
+    )
+
+
+class FraudCase(Base):
+    __tablename__ = "fraud_cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="NEW", index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="MEDIUM", index=True)
+    reason_flags: Mapped[dict] = mapped_column(JSON)
+    analyst_notes: Mapped[str] = mapped_column(Text, default="")
+    admin_notes: Mapped[str] = mapped_column(Text, default="")
+    escalated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+
+
+class SupportQuery(Base):
+    __tablename__ = "support_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    query_id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    fraud_case_id: Mapped[int | None] = mapped_column(ForeignKey("fraud_cases.id"), nullable=True)
+    query_type: Mapped[str] = mapped_column(String(30), default="USER_TO_TEAM", index=True)
+    asked_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    user_response: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="OPEN", index=True)
+    analyst_notes: Mapped[str] = mapped_column(Text, default="")
+    admin_notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
     )

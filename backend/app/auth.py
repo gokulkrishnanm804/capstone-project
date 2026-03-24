@@ -53,10 +53,27 @@ async def get_current_user(
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if user.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ACCOUNT_BLOCKED",
+                "msg": "Account is blocked. Contact admin.",
+            },
+        )
     return user
 
 
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
+
+
+def require_analyst_or_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if user.role not in {"analyst", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Analyst or admin access required",
+        )
     return user

@@ -78,6 +78,10 @@ class ModelService:
         location_seed = sum(ord(ch) for ch in location) % 97
         device_seed = sum(ord(ch) for ch in device_type) % 89
         hour = timestamp.hour
+        step_proxy = ((timestamp.day - 1) * 24) + hour + 1
+
+        # In PaySim-like datasets, flag is raised for very large transfer attempts.
+        flagged_fraud_like = tx_type == "TRANSFER" and amount >= 200000
 
         for feature in self.feature_order:
             name = feature.lower()
@@ -86,7 +90,7 @@ class ModelService:
             if name == "amount":
                 value = amount
             elif name in {"step", "hour"}:
-                value = float(hour)
+                value = float(step_proxy if name == "step" else hour)
             elif name == "time":
                 value = float(hour * 3600 + int(risk_signals["rapid_sequence_count"]) * 150)
             elif name in {"oldbalanceorg", "oldbalanceorig"}:
@@ -98,7 +102,7 @@ class ModelService:
             elif name == "newbalancedest":
                 value = receiver_balance + amount
             elif name == "isflaggedfraud":
-                value = 1.0 if risk_signals["rule_score"] >= 0.78 else 0.0
+                value = 1.0 if flagged_fraud_like else 0.0
             elif name.startswith("type_"):
                 value = 1.0 if name == f"type_{tx_type.lower()}" else 0.0
             elif name.startswith("v") and name[1:].isdigit():
@@ -141,7 +145,16 @@ class ModelService:
             "feature_payload": {f: float(features.get(f, 0.0)) for f in self.feature_order},
         }
 
-    def _explain(self, scaled: np.ndarray) -> list[FeatureImportance]:
+    def explain_feature_payload(
+        self,
+        feature_payload: dict[str, float],
+        top_n: int = 12,
+    ) -> list[FeatureImportance]:
+        raw_vector = self._vectorise_features(feature_payload)
+        scaled = self.scaler.transform(raw_vector)
+        return self._explain(scaled, top_n=top_n)
+
+    def _explain(self, scaled: np.ndarray, top_n: int = 12) -> list[FeatureImportance]:
         rf_values = self.rf_explainer.shap_values(scaled)
         if isinstance(rf_values, list):
             rf_values = rf_values[1]
@@ -152,13 +165,14 @@ class ModelService:
             xgb_values = xgb_values[0]
         xgb_values = xgb_values[0]
 
-        combined = (np.abs(rf_values) + np.abs(xgb_values)) / 2
+        # Keep signed SHAP direction so UI can correctly show push-to-SAFE/FRAUD.
+        combined = (rf_values + xgb_values) / 2
         importance = [
             FeatureImportance(feature=name, contribution=float(val))
             for name, val in zip(self.feature_order, combined)
         ]
         importance.sort(key=lambda item: abs(item.contribution), reverse=True)
-        return importance[:12]
+        return importance[:top_n]
 
 
 def get_model_service() -> ModelService:

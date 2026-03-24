@@ -1,4 +1,4 @@
-# FraudGuard AI Frontend
+# SentinelPay Frontend
 
 React + Vite frontend for simulation-based fraud detection.
 

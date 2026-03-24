@@ -35,7 +35,7 @@ export default function HomePage() {
         <div className="relative grid gap-8 lg:grid-cols-2 lg:items-center">
           <div>
             <p className="mb-3 inline-flex rounded-full border border-cyan-300/25 bg-cyan-400/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100">
-              FraudGuard AI
+              SentinelPay
             </p>
             <h1 className="font-display text-3xl font-extrabold leading-tight text-white sm:text-5xl">
               Simulation-Based Explainable Multi-Model Fraud Detection
@@ -51,9 +51,6 @@ export default function HomePage() {
                 className="btn-primary"
               >
                 Start Simulation <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-              <Link to="/model-insight" className="btn-secondary">
-                Explore Model Logic
               </Link>
             </div>
           </div>
