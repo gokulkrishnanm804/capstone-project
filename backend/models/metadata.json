@@ -1,98 +1,51 @@
 {
   "feature_columns": [
-    "step",
     "amount",
-    "oldbalanceOrg",
-    "newbalanceOrig",
-    "oldbalanceDest",
-    "newbalanceDest",
-    "isFlaggedFraud",
-    "type_CASH_IN",
-    "type_CASH_OUT",
-    "type_DEBIT",
-    "type_PAYMENT",
-    "type_TRANSFER"
+    "is_new_beneficiary",
+    "is_new_location",
+    "is_night_transaction",
+    "amount_vs_balance_ratio"
   ],
   "train_shape": [
-    206570,
-    12
+    4000,
+    5
   ],
   "test_shape": [
-    51643,
-    12
+    1000,
+    5
   ],
   "feature_stats": {
-    "step": {
-      "mean": 247.25419711633418,
-      "std": 146.9093985881132,
-      "min": 1.0,
-      "max": 743.0
-    },
     "amount": {
-      "mean": 220369.92365667105,
-      "std": 760918.2490499575,
-      "min": 0.0,
-      "max": 69886731.3
+      "mean": 39895.64938412842,
+      "std": 39033.84376267628,
+      "min": 218.67787725905288,
+      "max": 150000.0
     },
-    "oldbalanceOrg": {
-      "mean": 851496.4086422065,
-      "std": 2893463.4421134708,
-      "min": 0.0,
-      "max": 59585040.37
-    },
-    "newbalanceOrig": {
-      "mean": 827378.4670649038,
-      "std": 2880626.885210566,
-      "min": 0.0,
-      "max": 49585040.37
-    },
-    "oldbalanceDest": {
-      "mean": 1090668.810936436,
-      "std": 3551131.994276574,
-      "min": 0.0,
-      "max": 355185537.06
-    },
-    "newbalanceDest": {
-      "mean": 1234662.030329108,
-      "std": 3825377.338949356,
-      "min": 0.0,
-      "max": 355380483.53
-    },
-    "isFlaggedFraud": {
-      "mean": 6.196434726369315e-05,
-      "std": 0.007871514952230705,
+    "is_new_beneficiary": {
+      "mean": 0.2,
+      "std": 0.4000400060010002,
       "min": 0.0,
       "max": 1.0
     },
-    "type_CASH_IN": {
-      "mean": 0.21154240878654446,
-      "std": 0.40840282078116835,
+    "is_new_location": {
+      "mean": 0.113,
+      "std": 0.31662446243150894,
       "min": 0.0,
       "max": 1.0
     },
-    "type_CASH_OUT": {
-      "mean": 0.3563685794286113,
-      "std": 0.4789268246045413,
+    "is_night_transaction": {
+      "mean": 0.2046,
+      "std": 0.40344937015548277,
       "min": 0.0,
       "max": 1.0
     },
-    "type_DEBIT": {
-      "mean": 0.006409437170088261,
-      "std": 0.07980213624043213,
+    "amount_vs_balance_ratio": {
+      "mean": 37.345696905168445,
+      "std": 41.33679617745732,
       "min": 0.0,
-      "max": 1.0
-    },
-    "type_PAYMENT": {
-      "mean": 0.32853496919210107,
-      "std": 0.4696813787513811,
-      "min": 0.0,
-      "max": 1.0
-    },
-    "type_TRANSFER": {
-      "mean": 0.09714460542265493,
-      "std": 0.29615514638866497,
-      "min": 0.0,
-      "max": 1.0
+      "max": 179.8224961722841
     }
-  }
+  },
+  "fraud_ratio": 0.2,
+  "samples": 5000
 }

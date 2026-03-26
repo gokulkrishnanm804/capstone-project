@@ -15,8 +15,15 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
+    profile_image: Mapped[str] = mapped_column(String(255), default="sentinalpay - profile-image-1.avif")
     upi_pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mobile_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    registered_card_number: Mapped[str | None] = mapped_column(String(25), nullable=True)
+    upi_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    card_holder_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    account_holder_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user")
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE", index=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     blocked_reason: Mapped[str] = mapped_column(Text, default="")
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -136,3 +143,52 @@ class SupportQuery(Base):
         onupdate=datetime.utcnow,
         index=True,
     )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_role: Mapped[str] = mapped_column(String(30))
+    actor_name: Mapped[str] = mapped_column(String(120))
+    action: Mapped[str] = mapped_column(String(80))
+    target_type: Mapped[str] = mapped_column(String(80))
+    target_id: Mapped[str] = mapped_column(String(120))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AdminSetting(Base):
+    __tablename__ = "admin_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CashbackRule(Base):
+    __tablename__ = "cashback_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    channel: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    percentage: Mapped[float] = mapped_column(Float, default=0.0)
+    cap_per_txn: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ModelVersion(Base):
+    __tablename__ = "model_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    model_name: Mapped[str] = mapped_column(String(80), index=True)
+    version_label: Mapped[str] = mapped_column(String(80))
+    accuracy: Mapped[float] = mapped_column(Float)
+    precision: Mapped[float] = mapped_column(Float)
+    recall: Mapped[float] = mapped_column(Float)
+    f1: Mapped[float] = mapped_column(Float)
+    trained_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    meta: Mapped[dict] = mapped_column("metadata", JSON, default=dict)

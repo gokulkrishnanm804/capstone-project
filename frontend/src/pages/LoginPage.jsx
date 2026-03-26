@@ -37,9 +37,7 @@ export default function LoginPage() {
       }
 
       if (role === "admin") {
-        navigate("/admin");
-      } else if (role === "analyst") {
-        navigate("/analyst/cases");
+        navigate("/admin/dashboard");
       } else {
         navigate("/dashboard");
       }
@@ -113,11 +111,10 @@ export default function LoginPage() {
             <label className="mb-2 block text-sm font-medium text-slate-300">
               Login as
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {[
                 { value: "user", label: "User" },
                 { value: "admin", label: "Admin" },
-                { value: "analyst", label: "Fraud Analyst" },
               ].map((roleOption) => (
                 <button
                   key={roleOption.value}
@@ -199,9 +196,7 @@ export default function LoginPage() {
                 disabled={submittingQuery}
                 onClick={handleBlockedQuerySubmit}
               >
-                {submittingQuery
-                  ? "Submitting..."
-                  : "Submit Query To Analyst/Admin"}
+                {submittingQuery ? "Submitting..." : "Submit Query To Admin"}
               </button>
 
               {blockedSuccess && (

@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { DEFAULT_AVATAR, getAvatarUrl } from "../utils/avatarOptions";
 
 const NAV_ITEMS = [
   { label: "Home", path: "/", icon: Home },
@@ -23,74 +24,32 @@ const NAV_ITEMS = [
     path: "/dashboard",
     icon: BarChart3,
     auth: true,
-    hideForRoles: ["analyst", "admin"],
+    hideForRoles: ["admin"],
   },
   {
     label: "Transfer",
     path: "/simulate",
     icon: Sparkles,
     auth: true,
-    hideForRoles: ["analyst", "admin"],
+    hideForRoles: ["admin"],
   },
   {
     label: "History",
     path: "/history",
     icon: History,
     auth: true,
-    hideForRoles: ["analyst", "admin"],
+    hideForRoles: ["admin"],
   },
   {
     label: "Rewards",
     path: "/rewards",
     icon: Gift,
     auth: true,
-    hideForRoles: ["analyst", "admin"],
-  },
-  {
-    label: "Fraud Queries",
-    path: "/my-fraud-queries",
-    icon: AlertTriangle,
-    auth: true,
-    role: "user",
+    hideForRoles: ["admin"],
   },
   {
     label: "Admin",
-    path: "/admin",
-    icon: ShieldCheck,
-    auth: true,
-    role: "admin",
-  },
-  {
-    label: "Transactions",
-    path: "/analyst/transactions",
-    icon: History,
-    auth: true,
-    roles: ["analyst", "admin"],
-  },
-  {
-    label: "Fraud Queue",
-    path: "/analyst/cases",
-    icon: AlertTriangle,
-    auth: true,
-    role: "analyst",
-  },
-  {
-    label: "Answered Queries",
-    path: "/analyst/answered-queries",
-    icon: AlertTriangle,
-    auth: true,
-    role: "analyst",
-  },
-  {
-    label: "Pending Queries",
-    path: "/analyst/pending-queries",
-    icon: AlertTriangle,
-    auth: true,
-    role: "analyst",
-  },
-  {
-    label: "Admin Review",
-    path: "/admin/cases",
+    path: "/admin/dashboard",
     icon: ShieldCheck,
     auth: true,
     role: "admin",
@@ -102,8 +61,6 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileMenuRef = useRef(null);
   const isAuthScreen =
     location.pathname === "/login" || location.pathname === "/register";
 
@@ -123,27 +80,14 @@ export default function Navbar() {
   };
 
   useEffect(() => {
-    setProfileOpen(false);
     setOpen(false);
   }, [location.pathname]);
-
-  useEffect(() => {
-    const handleDocumentClick = (event) => {
-      if (
-        profileMenuRef.current &&
-        !profileMenuRef.current.contains(event.target)
-      ) {
-        setProfileOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleDocumentClick);
-    return () => document.removeEventListener("mousedown", handleDocumentClick);
-  }, []);
 
   const roleLabel = user?.role
     ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`
     : "Member";
+
+  const avatarSrc = getAvatarUrl(user?.profile_image || DEFAULT_AVATAR);
 
   return (
     <header className="sticky top-0 z-50 border-b border-cyan-200/20 bg-slate-950/70 backdrop-blur-xl">
@@ -188,66 +132,22 @@ export default function Navbar() {
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated ? (
             <>
-              <div className="relative" ref={profileMenuRef}>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-slate-900/45 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-slate-800/70"
-                  onClick={() => setProfileOpen((old) => !old)}
-                  aria-expanded={profileOpen}
-                  aria-haspopup="menu"
-                >
-                  <UserCircle2 className="h-4 w-4" />
+              <Link
+                to="/profile"
+                className="inline-flex items-center gap-2 rounded-xl border border-cyan-300/30 bg-slate-900/45 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-slate-800/70"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="h-7 w-7 overflow-hidden rounded-full border border-cyan-300/40 bg-slate-900/70">
+                    <img
+                      src={avatarSrc}
+                      alt="Profile avatar"
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </span>
                   Profile
-                  <ChevronDown
-                    className={`h-4 w-4 transition ${
-                      profileOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-
-                <AnimatePresence>
-                  {profileOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.18, ease: "easeOut" }}
-                      className="absolute right-0 top-[calc(100%+10px)] w-72 rounded-2xl border border-cyan-300/30 bg-slate-950/95 p-4 shadow-2xl backdrop-blur"
-                    >
-                      <p className="text-xs uppercase tracking-wide text-cyan-300/80">
-                        Signed in as
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-white break-words">
-                        {user?.name || "-"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400 break-all">
-                        {user?.email || "-"}
-                      </p>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 p-2">
-                          <p className="text-slate-400">Role</p>
-                          <p className="mt-0.5 font-semibold text-cyan-100">
-                            {roleLabel}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 p-2">
-                          <p className="text-slate-400">Status</p>
-                          <p
-                            className={`mt-0.5 font-semibold ${
-                              user?.is_blocked
-                                ? "text-rose-200"
-                                : "text-emerald-200"
-                            }`}
-                          >
-                            {user?.is_blocked ? "Blocked" : "Active"}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                </span>
+              </Link>
               <button
                 type="button"
                 className="btn-secondary"
@@ -293,35 +193,16 @@ export default function Navbar() {
               ))}
               {isAuthenticated ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => setProfileOpen((old) => !old)}
-                    className="flex w-full items-center justify-between rounded-lg bg-slate-900 px-3 py-2 text-left text-sm font-semibold text-cyan-100"
+                  <Link
+                    to="/profile"
+                    onClick={() => setOpen(false)}
+                    className="block w-full rounded-lg bg-slate-900 px-3 py-2 text-left text-sm font-semibold text-cyan-100"
                   >
                     <span className="inline-flex items-center gap-2">
                       <UserCircle2 className="h-4 w-4" />
                       Profile
                     </span>
-                    <ChevronDown
-                      className={`h-4 w-4 transition ${
-                        profileOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                  {profileOpen && (
-                    <div className="rounded-lg border border-slate-700/70 bg-slate-900/70 p-3 text-xs text-slate-200">
-                      <p className="text-slate-400">Name</p>
-                      <p className="mt-1 break-words font-semibold text-white">
-                        {user?.name || "-"}
-                      </p>
-                      <p className="mt-2 text-slate-400">Email</p>
-                      <p className="mt-1 break-all">{user?.email || "-"}</p>
-                      <p className="mt-2 text-slate-400">Role</p>
-                      <p className="mt-1 font-semibold text-cyan-100">
-                        {roleLabel}
-                      </p>
-                    </div>
-                  )}
+                  </Link>
                   <button
                     type="button"
                     onClick={() => {

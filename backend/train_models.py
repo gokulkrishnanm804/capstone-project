@@ -1,13 +1,9 @@
-"""Train fraud detection models and persist artifacts.
-
-This script expects a fraud-detection CSV dataset (e.g. PaySim synthetic
-financial dataset) to reside under backend/data/creditcard.csv.
-"""
+"""Train fraud detection models using synthetic data aligned to app features."""
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
 
 import joblib
 import numpy as np
@@ -20,51 +16,86 @@ from xgboost import XGBClassifier
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 MODEL_DIR = Path(__file__).resolve().parent / "models"
-DATA_PATH = Path(__file__).resolve().parent / "data" / "creditcard.csv"
 BACKGROUND_SAMPLES = 500
+FEATURE_COLUMNS = [
+    "amount",
+    "is_new_beneficiary",
+    "is_new_location",
+    "is_night_transaction",
+    "amount_vs_balance_ratio",
+]
 
 
-def load_dataset(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Dataset not found at {path}. Place creditcard.csv there."
+@dataclass
+class SyntheticConfig:
+    samples: int = 5_000
+    fraud_ratio: float = 0.20
+    currency_scale: tuple[float, float] = (200.0, 150_000.0)
+
+
+def _clip(value: float, low: float, high: float) -> float:
+    return float(max(low, min(high, value)))
+
+
+def generate_synthetic_dataset(config: SyntheticConfig) -> pd.DataFrame:
+    rng = np.random.default_rng(RANDOM_STATE)
+    n_fraud = int(config.samples * config.fraud_ratio)
+    n_safe = config.samples - n_fraud
+
+    rows = []
+
+    # SAFE profiles: modest amounts, known beneficiary/location, day-time.
+    for _ in range(n_safe):
+        amount = rng.uniform(200, 45_000)
+        ratio = _clip(rng.normal(18, 9), 0, 60)
+        is_new_beneficiary = 0
+        is_new_location = 0
+        is_night = 1 if rng.random() < 0.08 else 0
+        label = 0
+        rows.append(
+            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
         )
-    return pd.read_csv(path)
 
+    # FRAUD scenario A: high ratio + unfamiliar context.
+    for _ in range(n_fraud // 2):
+        base_balance = rng.uniform(40_000, 160_000)
+        ratio = _clip(rng.uniform(70, 180), 60, 250)
+        amount = _clip(base_balance * (ratio / 100), 10_000, config.currency_scale[1])
+        is_new_beneficiary = 1
+        is_new_location = 1 if rng.random() < 0.7 else 0
+        is_night = 1 if rng.random() < 0.35 else 0
+        label = 1
+        rows.append(
+            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
+        )
 
-def preprocess(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
-    target_col = None
-    if "isFraud" in df.columns:
-        target_col = "isFraud"
-    elif "Class" in df.columns:
-        target_col = "Class"
-    if target_col is None:
-        raise ValueError("Dataset must contain either 'isFraud' or 'Class'.")
+    # FRAUD scenario B: large night transfer to new beneficiary.
+    for _ in range(n_fraud - (n_fraud // 2)):
+        amount = rng.uniform(55_000, config.currency_scale[1])
+        ratio = _clip(rng.uniform(65, 140), 60, 250)
+        is_new_beneficiary = 1
+        is_new_location = 1 if rng.random() < 0.4 else 0
+        is_night = 1
+        label = 1
+        rows.append(
+            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
+        )
 
-    # Drop identifier / non-numeric columns
-    drop_cols = [c for c in ["nameOrig", "nameDest", target_col] if c in df.columns]
-    X = df.drop(columns=drop_cols)
+    df = pd.DataFrame(rows, columns=[*FEATURE_COLUMNS, "label"])
 
-    # One-hot encode transaction type when available
-    if "type" in X.columns:
-        X = pd.get_dummies(X, columns=["type"], prefix="type")
-
-    y = df[target_col]
-    return X, y
+    # Shuffle to avoid ordered blocks.
+    df = df.sample(frac=1.0, random_state=RANDOM_STATE).reset_index(drop=True)
+    return df
 
 
 def train_models() -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    df = load_dataset(DATA_PATH)
 
-    # Sample down for memory / speed (stratified)
-    if len(df) > 500_000:
-        df = df.groupby("isFraud", group_keys=False).apply(
-            lambda g: g.sample(min(len(g), 250_000), random_state=RANDOM_STATE)
-        ).reset_index(drop=True)
-        print(f"Sampled dataset to {len(df)} rows")
+    config = SyntheticConfig()
+    df = generate_synthetic_dataset(config)
 
-    X, y = preprocess(df)
+    X = df[FEATURE_COLUMNS]
+    y = df["label"]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -95,11 +126,11 @@ def train_models() -> None:
     fraud_ratio = max(float(y_train.mean()), 1e-4)
     scale_pos_weight = (1 - fraud_ratio) / fraud_ratio
     xgb_model = XGBClassifier(
-        n_estimators=400,
-        max_depth=6,
+        n_estimators=320,
+        max_depth=5,
         learning_rate=0.08,
         subsample=0.9,
-        colsample_bytree=0.8,
+        colsample_bytree=0.85,
         objective="binary:logistic",
         eval_metric="logloss",
         random_state=RANDOM_STATE,
@@ -112,8 +143,8 @@ def train_models() -> None:
     joblib.dump(xgb_model, MODEL_DIR / "xgb.pkl")
 
     iso = IsolationForest(
-        n_estimators=400,
-        contamination=float(y.mean()),
+        n_estimators=320,
+        contamination=config.fraud_ratio,
         random_state=RANDOM_STATE,
         n_jobs=-1,
     )
@@ -127,14 +158,16 @@ def train_models() -> None:
             "min": float(X[column].min()),
             "max": float(X[column].max()),
         }
-        for column in X.columns
+        for column in FEATURE_COLUMNS
     }
 
     metadata = {
-        "feature_columns": list(X.columns),
+        "feature_columns": FEATURE_COLUMNS,
         "train_shape": list(X_train.shape),
         "test_shape": list(X_test.shape),
         "feature_stats": feature_stats,
+        "fraud_ratio": float(fraud_ratio),
+        "samples": config.samples,
     }
     (MODEL_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2))
 

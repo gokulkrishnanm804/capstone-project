@@ -1,23 +1,38 @@
+import { lazy, Suspense } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Route, Routes, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
-import AdminDashboardPage from "./pages/AdminDashboardPage";
-import AdminCaseReviewPage from "./pages/AdminCaseReviewPage";
-import AnalystAnsweredQueriesPage from "./pages/AnalystAnsweredQueriesPage";
-import AnalystCaseQueuePage from "./pages/AnalystCaseQueuePage";
-import AnalystPendingQueriesPage from "./pages/AnalystPendingQueriesPage";
-import AnalystTransactionExplainablePage from "./pages/AnalystTransactionExplainablePage";
-import AnalystTransactionsPage from "./pages/AnalystTransactionsPage";
-import DashboardPage from "./pages/DashboardPage";
-import FraudDetectionPage from "./pages/FraudDetectionPage";
-import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage";
-import PredictionResultPage from "./pages/PredictionResultPage";
-import RegisterPage from "./pages/RegisterPage";
-import RewardsPage from "./pages/RewardsPage";
-import TransactionHistoryPage from "./pages/TransactionHistoryPage";
-import UserFraudQueriesPage from "./pages/UserFraudQueriesPage";
+
+const AdminOperationsReportsPage = lazy(
+  () => import("./pages/AnalystReportsPage"),
+);
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const AdminUserManagementPage = lazy(
+  () => import("./pages/AdminUserManagementPage"),
+);
+const AdminTransactionManagementPage = lazy(
+  () => import("./pages/AdminTransactionManagementPage"),
+);
+const AdminTransactionDetailPage = lazy(
+  () => import("./pages/AdminTransactionDetailPage"),
+);
+const AdminModelManagementPage = lazy(
+  () => import("./pages/AdminModelManagementPage"),
+);
+const AdminRewardsPage = lazy(() => import("./pages/AdminRewardsPage"));
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const FraudDetectionPage = lazy(() => import("./pages/FraudDetectionPage"));
+const HomePage = lazy(() => import("./pages/HomePage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const PredictionResultPage = lazy(() => import("./pages/PredictionResultPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const RewardsPage = lazy(() => import("./pages/RewardsPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const TransactionHistoryPage = lazy(
+  () => import("./pages/TransactionHistoryPage"),
+);
+// UserFraudQueriesPage removed per request
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -52,7 +67,9 @@ export default function App() {
             path="/"
             element={
               <AnimatedPage>
-                <HomePage />
+                <Suspense fallback={<PageFallback />}>
+                  <HomePage />
+                </Suspense>
               </AnimatedPage>
             }
           />
@@ -60,7 +77,9 @@ export default function App() {
             path="/login"
             element={
               <AnimatedPage>
-                <LoginPage />
+                <Suspense fallback={<PageFallback />}>
+                  <LoginPage />
+                </Suspense>
               </AnimatedPage>
             }
           />
@@ -68,16 +87,32 @@ export default function App() {
             path="/register"
             element={
               <AnimatedPage>
-                <RegisterPage />
+                <Suspense fallback={<PageFallback />}>
+                  <RegisterPage />
+                </Suspense>
               </AnimatedPage>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <ProfilePage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
+              <ProtectedRoute blockedRoles={["admin"]}>
                 <AnimatedPage>
-                  <DashboardPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <DashboardPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -85,9 +120,11 @@ export default function App() {
           <Route
             path="/simulate"
             element={
-              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
+              <ProtectedRoute blockedRoles={["admin"]}>
                 <AnimatedPage>
-                  <FraudDetectionPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <FraudDetectionPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -95,9 +132,11 @@ export default function App() {
           <Route
             path="/result"
             element={
-              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
+              <ProtectedRoute blockedRoles={["admin"]}>
                 <AnimatedPage>
-                  <PredictionResultPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <PredictionResultPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -105,9 +144,11 @@ export default function App() {
           <Route
             path="/history"
             element={
-              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
+              <ProtectedRoute blockedRoles={["admin"]}>
                 <AnimatedPage>
-                  <TransactionHistoryPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <TransactionHistoryPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -115,19 +156,23 @@ export default function App() {
           <Route
             path="/rewards"
             element={
-              <ProtectedRoute blockedRoles={["analyst", "admin"]}>
+              <ProtectedRoute blockedRoles={["admin"]}>
                 <AnimatedPage>
-                  <RewardsPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <RewardsPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
           />
           <Route
-            path="/my-fraud-queries"
+            path="/admin/reports"
             element={
-              <ProtectedRoute requiredRole="user">
+              <ProtectedRoute requiredRole="admin">
                 <AnimatedPage>
-                  <UserFraudQueriesPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminOperationsReportsPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -137,67 +182,81 @@ export default function App() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <AnimatedPage>
-                  <AdminDashboardPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminDashboardPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
           />
           <Route
-            path="/analyst/cases"
-            element={
-              <ProtectedRoute requiredRole="analyst">
-                <AnimatedPage>
-                  <AnalystCaseQueuePage />
-                </AnimatedPage>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analyst/answered-queries"
-            element={
-              <ProtectedRoute requiredRole="analyst">
-                <AnimatedPage>
-                  <AnalystAnsweredQueriesPage />
-                </AnimatedPage>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analyst/pending-queries"
-            element={
-              <ProtectedRoute requiredRole="analyst">
-                <AnimatedPage>
-                  <AnalystPendingQueriesPage />
-                </AnimatedPage>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analyst/transactions"
-            element={
-              <ProtectedRoute requiredRole={["analyst", "admin"]}>
-                <AnimatedPage>
-                  <AnalystTransactionsPage />
-                </AnimatedPage>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/analyst/transactions/:transactionId"
-            element={
-              <ProtectedRoute requiredRole={["analyst", "admin"]}>
-                <AnimatedPage>
-                  <AnalystTransactionExplainablePage />
-                </AnimatedPage>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/cases"
+            path="/admin/dashboard"
             element={
               <ProtectedRoute requiredRole="admin">
                 <AnimatedPage>
-                  <AdminCaseReviewPage />
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminDashboardPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminUserManagementPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/transactions"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminTransactionManagementPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/transactions/:transactionId"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminTransactionDetailPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/models"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminModelManagementPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rewards"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <AdminRewardsPage />
+                  </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>
             }
@@ -206,4 +265,8 @@ export default function App() {
       </AnimatePresence>
     </div>
   );
+}
+
+function PageFallback() {
+  return <div className="px-4 py-10 text-slate-300">Loading…</div>;
 }

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import joblib
 import numpy as np
+import pandas as pd
 import shap
 from sklearn.base import BaseEstimator
 
@@ -16,6 +16,14 @@ from .schemas import FeatureImportance
 
 
 class ModelService:
+    FEATURE_LABELS = {
+        "amount": "Transaction Amount",
+        "is_new_beneficiary": "New Beneficiary",
+        "is_new_location": "New Location",
+        "is_night_transaction": "Night Transaction",
+        "amount_vs_balance_ratio": "Balance Drain %",
+    }
+
     def __init__(self, model_dir: Path | None = None) -> None:
         self.model_dir = Path(model_dir or settings.model_dir)
         self.scaler = joblib.load(self.model_dir / "scaler.pkl")
@@ -37,6 +45,8 @@ class ModelService:
 
     def _vectorise_features(self, features: dict[str, float]) -> np.ndarray:
         values = [float(features.get(feature, 0.0)) for feature in self.feature_order]
+        if hasattr(self.scaler, "feature_names_in_"):
+            return pd.DataFrame([values], columns=self.scaler.feature_names_in_)
         return np.asarray(values, dtype=float).reshape(1, -1)
 
     def _bounded(self, feature_name: str, value: float) -> float:
@@ -55,66 +65,27 @@ class ModelService:
         self,
         *,
         amount: float,
-        transaction_type: str,
-        sender_balance: float,
-        receiver_balance: float,
-        risk_signals: dict[str, Any],
-        timestamp: datetime,
-        location: str,
-        device_type: str,
+        is_new_beneficiary: bool | int,
+        is_new_location: bool | int,
+        is_night_transaction: bool | int,
+        amount_vs_balance_ratio: float,
     ) -> dict[str, float]:
-        tx_type = transaction_type.upper()
-        type_alias_map = {
-            "UPI": "PAYMENT",
-            "CARD": "DEBIT",
-            "TRANSFER": "TRANSFER",
-        }
-        tx_type = type_alias_map.get(tx_type, tx_type)
         base = {
             feature: float(self.feature_stats.get(feature, {}).get("mean", 0.0))
             for feature in self.feature_order
         }
 
-        location_seed = sum(ord(ch) for ch in location) % 97
-        device_seed = sum(ord(ch) for ch in device_type) % 89
-        hour = timestamp.hour
-        step_proxy = ((timestamp.day - 1) * 24) + hour + 1
-
-        # In PaySim-like datasets, flag is raised for very large transfer attempts.
-        flagged_fraud_like = tx_type == "TRANSFER" and amount >= 200000
+        payload = {
+            "amount": float(amount),
+            "is_new_beneficiary": 1.0 if is_new_beneficiary else 0.0,
+            "is_new_location": 1.0 if is_new_location else 0.0,
+            "is_night_transaction": 1.0 if is_night_transaction else 0.0,
+            "amount_vs_balance_ratio": float(amount_vs_balance_ratio),
+        }
 
         for feature in self.feature_order:
-            name = feature.lower()
-            value = base[feature]
-
-            if name == "amount":
-                value = amount
-            elif name in {"step", "hour"}:
-                value = float(step_proxy if name == "step" else hour)
-            elif name == "time":
-                value = float(hour * 3600 + int(risk_signals["rapid_sequence_count"]) * 150)
-            elif name in {"oldbalanceorg", "oldbalanceorig"}:
-                value = sender_balance
-            elif name in {"newbalanceorig", "newbalanceorg"}:
-                value = max(sender_balance - amount, 0.0)
-            elif name == "oldbalancedest":
-                value = receiver_balance
-            elif name == "newbalancedest":
-                value = receiver_balance + amount
-            elif name == "isflaggedfraud":
-                value = 1.0 if flagged_fraud_like else 0.0
-            elif name.startswith("type_"):
-                value = 1.0 if name == f"type_{tx_type.lower()}" else 0.0
-            elif name.startswith("v") and name[1:].isdigit():
-                idx = int(name[1:])
-                std = float(self.feature_stats.get(feature, {}).get("std", 1.0) or 1.0)
-                directional = 1.0 if idx % 2 else -1.0
-                seeded_noise = (((location_seed + device_seed + idx) % 13) - 6) / 20
-                value = value + directional * std * risk_signals["rule_score"] * 0.8 + seeded_noise * std
-            elif "risk" in name or "anomaly" in name or "velocity" in name:
-                value = risk_signals["rule_score"]
-
-            base[feature] = self._bounded(feature, value)
+            if feature in payload:
+                base[feature] = self._bounded(feature, payload[feature])
 
         return base
 
@@ -154,6 +125,9 @@ class ModelService:
         scaled = self.scaler.transform(raw_vector)
         return self._explain(scaled, top_n=top_n)
 
+    def _label_for_feature(self, feature: str) -> str:
+        return self.FEATURE_LABELS.get(feature, feature)
+
     def _explain(self, scaled: np.ndarray, top_n: int = 12) -> list[FeatureImportance]:
         rf_values = self.rf_explainer.shap_values(scaled)
         if isinstance(rf_values, list):
@@ -168,7 +142,11 @@ class ModelService:
         # Keep signed SHAP direction so UI can correctly show push-to-SAFE/FRAUD.
         combined = (rf_values + xgb_values) / 2
         importance = [
-            FeatureImportance(feature=name, contribution=float(val))
+            FeatureImportance(
+                feature=name,
+                contribution=float(val),
+                label=self._label_for_feature(name),
+            )
             for name, val in zip(self.feature_order, combined)
         ]
         importance.sort(key=lambda item: abs(item.contribution), reverse=True)

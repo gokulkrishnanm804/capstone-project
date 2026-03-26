@@ -29,6 +29,20 @@ export default function TransactionHistoryPage() {
     fetchRows({});
   }, []);
 
+  const formatDate = (value) =>
+    new Date(value).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+  const formatTime = (value) =>
+    new Date(value).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
   const applyFilters = () => {
     fetchRows({
       fraud_only: filters.fraud_only,
@@ -96,25 +110,22 @@ export default function TransactionHistoryPage() {
         {loading ? (
           <p className="text-slate-300">Loading history...</p>
         ) : (
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="text-left text-slate-400">
                 <th className="pb-3">Date</th>
+                <th className="pb-3">Time</th>
                 <th className="pb-3">Counterparty</th>
                 <th className="pb-3">Amount</th>
                 <th className="pb-3">Type</th>
                 <th className="pb-3">Location</th>
-                <th className="pb-3">Device</th>
-                <th className="pb-3">Risk</th>
-                <th className="pb-3">Result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/70 text-slate-200">
               {rows.map((row) => (
                 <tr key={row.transaction_id}>
-                  <td className="py-3">
-                    {new Date(row.date).toLocaleString()}
-                  </td>
+                  <td className="py-3">{formatDate(row.date)}</td>
+                  <td className="py-3">{formatTime(row.date)}</td>
                   <td className="py-3">{row.counterparty}</td>
                   <td className="py-3">
                     <p
@@ -135,24 +146,11 @@ export default function TransactionHistoryPage() {
                   </td>
                   <td className="py-3">{row.transaction_type}</td>
                   <td className="py-3">{row.location}</td>
-                  <td className="py-3">{row.device_type}</td>
-                  <td className="py-3">{(row.risk_score * 100).toFixed(1)}%</td>
-                  <td className="py-3">
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                        row.prediction === "FRAUD"
-                          ? "bg-rose-500/20 text-rose-200"
-                          : "bg-emerald-500/20 text-emerald-200"
-                      }`}
-                    >
-                      {row.prediction}
-                    </span>
-                  </td>
                 </tr>
               ))}
               {!rows.length && (
                 <tr>
-                  <td className="py-6 text-slate-400" colSpan={8}>
+                  <td className="py-6 text-slate-400" colSpan={6}>
                     No transactions match the selected filters.
                   </td>
                 </tr>

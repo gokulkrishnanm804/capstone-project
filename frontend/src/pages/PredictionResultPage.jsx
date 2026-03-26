@@ -29,7 +29,7 @@ export default function PredictionResultPage() {
   const chartData = useMemo(() => {
     if (!result?.prediction?.feature_importance) return [];
     return result.prediction.feature_importance.map((item) => ({
-      feature: item.feature,
+      feature: item.label || item.feature,
       value: Math.abs(item.contribution),
       signed: item.contribution,
     }));

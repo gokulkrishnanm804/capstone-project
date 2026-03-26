@@ -8,7 +8,7 @@ export default function ProtectedRoute({
   redirectTo,
 }) {
   const { isAuthenticated, user } = useAuth();
-  const roleFallback = user?.role === "admin" ? "/admin" : "/analyst/cases";
+  const roleFallback = user?.role === "admin" ? "/admin" : "/";
   const unauthorizedTarget = redirectTo || roleFallback;
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
