@@ -479,7 +479,7 @@ export default function FraudDetectionPage() {
     executeTransaction("send", trimmedPin);
   };
 
-    const receiverAccount = form.receiver_account;
+  const receiverAccount = form.receiver_account;
   const isUpi = form.transaction_type === "UPI";
   const isCard = form.transaction_type === "CARD";
   const isAccountTransfer = form.transaction_type === "TRANSFER";
