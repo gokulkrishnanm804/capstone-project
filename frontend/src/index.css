@@ -1,0 +1,46 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #dce8ff;
+  background: #05070f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background: linear-gradient(160deg, #05070f 0%, #0b1025 45%, #17123f 100%);
+  background-attachment: fixed;
+  color: #dce8ff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass {
+  background: rgba(12, 20, 47, 0.62);
+  border: 1px solid rgba(126, 188, 255, 0.24);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 8px 35px rgba(30, 60, 130, 0.35);
+}
+
+.input-dark {
+  @apply w-full rounded-xl border border-slate-600/60 bg-slate-900/55 px-3 py-2.5 text-slate-100 outline-none transition focus:border-aurora focus:ring-2 focus:ring-aurora/20;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 px-4 py-2.5 font-semibold text-slate-950 shadow-neon transition hover:scale-[1.02] active:scale-[0.99];
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-xl border border-cyan-300/35 bg-cyan-500/10 px-4 py-2.5 font-semibold text-cyan-100 transition hover:bg-cyan-500/20;
+}

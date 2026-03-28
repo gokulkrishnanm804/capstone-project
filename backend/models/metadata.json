@@ -1,0 +1,51 @@
+{
+  "feature_columns": [
+    "amount",
+    "is_new_beneficiary",
+    "is_new_location",
+    "is_night_transaction",
+    "amount_vs_balance_ratio"
+  ],
+  "train_shape": [
+    4000,
+    5
+  ],
+  "test_shape": [
+    1000,
+    5
+  ],
+  "feature_stats": {
+    "amount": {
+      "mean": 39895.64938412842,
+      "std": 39033.84376267628,
+      "min": 218.67787725905288,
+      "max": 150000.0
+    },
+    "is_new_beneficiary": {
+      "mean": 0.2,
+      "std": 0.4000400060010002,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "is_new_location": {
+      "mean": 0.113,
+      "std": 0.31662446243150894,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "is_night_transaction": {
+      "mean": 0.2046,
+      "std": 0.40344937015548277,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "amount_vs_balance_ratio": {
+      "mean": 37.345696905168445,
+      "std": 41.33679617745732,
+      "min": 0.0,
+      "max": 179.8224961722841
+    }
+  },
+  "fraud_ratio": 0.2,
+  "samples": 5000
+}
