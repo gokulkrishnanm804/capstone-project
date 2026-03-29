@@ -107,7 +107,6 @@ export default function AdminTransactionDetailPage() {
                   value={new Date(row.date).toLocaleString()}
                 />
                 <InfoBlock label="Location" value={row.location || "—"} />
-                <InfoBlock label="Device" value={row.device_type || "—"} />
               </section>
 
               <section className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 md:grid-cols-2">
