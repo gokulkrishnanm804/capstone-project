@@ -280,6 +280,7 @@ class AnalystReportSummary(BaseModel):
     fraud_rate: float
     total_amount_transacted: float
     total_amount_blocked: float
+    total_cashback_given: float
     top_flagged_user: str | None
 
 

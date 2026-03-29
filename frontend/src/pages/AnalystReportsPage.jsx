@@ -131,8 +131,8 @@ export default function AdminOperationsReportsPage() {
                   accent="text-amber-200"
                 />
                 <Card
-                  label="Amount Blocked"
-                  value={`₹ ${data.summary.total_amount_blocked.toFixed(2)}`}
+                  label="Total Cashback Given"
+                  value={`₹ ${Number(data.summary.total_cashback_given ?? 0).toFixed(2)}`}
                   accent="text-emerald-200"
                 />
               </div>
@@ -180,7 +180,10 @@ function exportCsv(data) {
     ],
     ["Fraud Count", data.summary.fraud_count],
     ["Fraud Rate %", data.summary.fraud_rate],
-    ["Total Amount Blocked", data.summary.total_amount_blocked],
+    [
+      "Total Cashback Given",
+      Number(data.summary.total_cashback_given ?? 0).toFixed(2),
+    ],
     [
       "Total Amount Transacted",
       Number(
