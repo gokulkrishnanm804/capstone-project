@@ -67,6 +67,10 @@ export const getMyFraudQueries = (params) =>
   API.get("/my-fraud-queries", { params });
 export const respondMyFraudQuery = (queryId, data) =>
   API.patch(`/my-fraud-queries/${queryId}/respond`, data);
+export const getMyHighRiskTransactions = (params) =>
+  API.get("/my/high-risk-transactions", { params });
+export const executeMyHighRiskTransaction = (transactionId) =>
+  API.post(`/my/high-risk-transactions/${transactionId}/execute`);
 export const getFraudAnalytics = () => API.get("/fraud-analytics");
 export const getModelInsights = () => API.get("/model-insights");
 export const getAdminOverview = () => API.get("/admin/overview");

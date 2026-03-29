@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 import joblib
 from sqlalchemy import func, inspect, or_, text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 from .auth import (
@@ -73,6 +73,8 @@ from .schemas import (
     FraudCaseResponse,
     FraudCaseReviewRequest,
     FeatureImportance,
+    HighRiskTransferExecuteResponse,
+    HighRiskTransferItem,
     HighRiskDecisionRequest,
     LoginRequest,
     ModelInsightResponse,
@@ -517,6 +519,32 @@ VALID_CASE_SEVERITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
 VALID_QUERY_STATUSES = {"OPEN", "RESOLVED"}
 VALID_QUERY_TYPES = {"USER_TO_TEAM", "ADMIN_TO_USER", "HIGH_RISK_TRANSFER"}
 
+TX_STATUS_SIMULATED = "SIMULATED"
+TX_STATUS_EXECUTED = "EXECUTED"
+TX_STATUS_PENDING_ADMIN = "PENDING_ADMIN_APPROVAL"
+TX_STATUS_ADMIN_APPROVED = "ADMIN_APPROVED"
+TX_STATUS_ADMIN_DENIED = "ADMIN_DENIED"
+
+ADMIN_DECISION_ALLOW = "ALLOW"
+ADMIN_DECISION_DENY = "DENY"
+
+HIGH_RISK_STATUS_PENDING = "PENDING"
+HIGH_RISK_STATUS_APPROVED = "APPROVED"
+HIGH_RISK_STATUS_DENIED = "DENIED"
+HIGH_RISK_STATUS_EXECUTED = "EXECUTED"
+VALID_HIGH_RISK_TX_STATUSES = {
+    HIGH_RISK_STATUS_PENDING,
+    HIGH_RISK_STATUS_APPROVED,
+    HIGH_RISK_STATUS_DENIED,
+    HIGH_RISK_STATUS_EXECUTED,
+}
+HIGH_RISK_DEFAULT_MESSAGES = {
+    HIGH_RISK_STATUS_PENDING: "Waiting for admin approval.",
+    HIGH_RISK_STATUS_APPROVED: "Admin approved this transaction. You can transfer now.",
+    HIGH_RISK_STATUS_DENIED: "Admin denied this transaction.",
+    HIGH_RISK_STATUS_EXECUTED: "Transaction completed.",
+}
+
 
 def _score_percentage(score: float) -> int:
     bounded = max(0.0, min(float(score), 1.0))
@@ -659,6 +687,31 @@ def _ensure_schema_migrations() -> None:
         with engine.begin() as connection:
             connection.execute(
                 text("ALTER TABLE transactions ADD COLUMN cashback_amount FLOAT NOT NULL DEFAULT 0")
+            )
+    if "transaction_status" not in transaction_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE transactions ADD COLUMN transaction_status VARCHAR(40) NOT NULL DEFAULT 'EXECUTED'")
+            )
+    if "admin_decision" not in transaction_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE transactions ADD COLUMN admin_decision VARCHAR(20) NULL")
+            )
+    if "admin_decided_at" not in transaction_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE transactions ADD COLUMN admin_decided_at DATETIME NULL")
+            )
+    if "admin_decided_by_user_id" not in transaction_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE transactions ADD COLUMN admin_decided_by_user_id INTEGER NULL")
+            )
+    if "executed_at" not in transaction_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE transactions ADD COLUMN executed_at DATETIME NULL")
             )
 
     support_query_columns = {
@@ -1323,6 +1376,11 @@ def simulate_transaction(
             isolation_forest_score=model_result["isolation_forest_score"],
             final_score=final_score,
             prediction=prediction,
+            transaction_status=TX_STATUS_PENDING_ADMIN,
+            admin_decision=None,
+            admin_decided_at=None,
+            admin_decided_by_user_id=None,
+            executed_at=None,
             shap_importance={
                 item.feature: item.contribution for item in model_result["feature_importance"]
             },
@@ -1453,6 +1511,8 @@ def simulate_transaction(
         isolation_forest_score=model_result["isolation_forest_score"],
         final_score=final_score,
         prediction=prediction,
+        transaction_status=TX_STATUS_EXECUTED if execute_transfer else TX_STATUS_SIMULATED,
+        executed_at=server_now_naive if execute_transfer else None,
         shap_importance={
             item.feature: item.contribution for item in model_result["feature_importance"]
         },
@@ -1685,6 +1745,38 @@ def _support_query_response(
         created_at=query.created_at,
         updated_at=query.updated_at,
     )
+
+
+def _high_risk_transaction_status(transaction: Transaction, query: SupportQuery | None = None) -> str:
+    note_value = (transaction.note or "").strip().lower()
+    admin_note = ((query.admin_notes if query else "") or "").upper()
+
+    if note_value.startswith("pending admin approval"):
+        return HIGH_RISK_STATUS_PENDING
+    if note_value.startswith("approved by admin"):
+        return HIGH_RISK_STATUS_APPROVED
+    if note_value.startswith("denied by admin"):
+        return HIGH_RISK_STATUS_DENIED
+    if note_value.startswith("transaction executed") or "executed after admin approval" in note_value:
+        return HIGH_RISK_STATUS_EXECUTED
+
+    normalized_status = (transaction.transaction_status or "").strip().upper()
+    if normalized_status == TX_STATUS_PENDING_ADMIN:
+        return HIGH_RISK_STATUS_PENDING
+    if normalized_status == TX_STATUS_ADMIN_APPROVED:
+        return HIGH_RISK_STATUS_APPROVED
+    if normalized_status == TX_STATUS_ADMIN_DENIED:
+        return HIGH_RISK_STATUS_DENIED
+    if normalized_status == TX_STATUS_EXECUTED:
+        return HIGH_RISK_STATUS_EXECUTED
+
+    if "DENIED" in admin_note:
+        return HIGH_RISK_STATUS_DENIED
+    if "APPROVED" in admin_note:
+        return HIGH_RISK_STATUS_APPROVED
+    if query and query.status == "OPEN":
+        return HIGH_RISK_STATUS_PENDING
+    return HIGH_RISK_STATUS_PENDING
 
 
 @app.get("/fraud-cases", response_model=list[FraudCaseResponse])
@@ -2024,49 +2116,24 @@ def decide_high_risk_transaction(
     if transaction is None:
         raise HTTPException(status_code=404, detail="Linked transaction not found")
 
-    if not transaction.note.startswith("Pending admin approval"):
+    if not (
+        transaction.transaction_status == TX_STATUS_PENDING_ADMIN
+        or transaction.note.startswith("Pending admin approval")
+    ):
         raise HTTPException(status_code=409, detail="Transaction is not in pending-admin state")
-
-    sender = db.query(Account).filter(Account.id == transaction.sender_account_id).first()
-    receiver = db.query(Account).filter(Account.id == transaction.receiver_account_id).first()
-    if sender is None or receiver is None:
-        raise HTTPException(status_code=404, detail="Linked accounts not found")
 
     decision = payload.decision.strip().upper()
     admin_note = (payload.admin_notes or "").strip()
     timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
-    if decision == "ALLOW":
-        sender_balance = _decimal_to_float(sender.balance)
-        if transaction.amount > sender_balance:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot allow transaction: sender balance is now insufficient",
-            )
-
-        historical_success = (
-            db.query(func.count(Transaction.id))
-            .filter(
-                Transaction.user_id == transaction.user_id,
-                Transaction.note.like("Transaction executed%"),
-            )
-            .scalar()
-            or 0
-        )
-        cashback_earned = float(
-            random.randint(21, 100)
-            if historical_success == 0
-            else random.randint(1, 10)
-        )
-
-        sender.balance = _decimal_to_float(sender_balance - transaction.amount + cashback_earned)
-        receiver.balance = _decimal_to_float(receiver.balance) + transaction.amount
-        transaction.cashback_amount = cashback_earned
-        transaction.note = (
-            f"Transaction executed after admin approval. Cashback credited: INR {cashback_earned:.2f}"
-        )
+    if decision == ADMIN_DECISION_ALLOW:
+        transaction.note = "Approved by admin: awaiting user transfer execution"
+        transaction.transaction_status = TX_STATUS_ADMIN_APPROVED
+        transaction.admin_decision = ADMIN_DECISION_ALLOW
+        transaction.admin_decided_at = datetime.utcnow()
+        transaction.admin_decided_by_user_id = current_user.id
         support_query.status = "RESOLVED"
-        support_query.admin_notes = admin_note or "APPROVED: Transaction allowed by admin"
+        support_query.admin_notes = admin_note or "APPROVED: Transaction allowed by admin. User can execute now."
         support_query.analyst_notes = (
             f"ADMIN_DECISION=ALLOW; DECIDED_BY={current_user.id}; DECIDED_AT={timestamp}"
         )
@@ -2076,13 +2143,17 @@ def decide_high_risk_transaction(
         _log_audit(
             db,
             actor=current_user,
-            action="allow_high_risk_transaction",
+            action="approve_high_risk_transaction_request",
             target_type="transaction",
             target_id=transaction.transaction_id,
-            details={"query_id": support_query.query_id, "decision": "ALLOW"},
+            details={"query_id": support_query.query_id, "decision": ADMIN_DECISION_ALLOW},
         )
     else:
         transaction.note = "Denied by admin: high-risk transaction was not approved"
+        transaction.transaction_status = TX_STATUS_ADMIN_DENIED
+        transaction.admin_decision = ADMIN_DECISION_DENY
+        transaction.admin_decided_at = datetime.utcnow()
+        transaction.admin_decided_by_user_id = current_user.id
         support_query.status = "RESOLVED"
         support_query.admin_notes = admin_note or "DENIED: Permission denied"
         support_query.analyst_notes = (
@@ -2094,10 +2165,10 @@ def decide_high_risk_transaction(
         _log_audit(
             db,
             actor=current_user,
-            action="deny_high_risk_transaction",
+            action="deny_high_risk_transaction_request",
             target_type="transaction",
             target_id=transaction.transaction_id,
-            details={"query_id": support_query.query_id, "decision": "DENY"},
+            details={"query_id": support_query.query_id, "decision": ADMIN_DECISION_DENY},
         )
 
     db.add(transaction)
@@ -2224,6 +2295,214 @@ def list_my_fraud_queries(
             note,
         ) in rows
     ]
+
+
+@app.get("/my/high-risk-transactions", response_model=list[HighRiskTransferItem])
+def list_my_high_risk_transactions(
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    limit: int | None = Query(None, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != "user":
+        raise HTTPException(status_code=403, detail="User access required")
+
+    if limit is not None:
+        page = 1
+        page_size = limit
+
+    receiver_account = aliased(Account)
+
+    query = (
+        db.query(SupportQuery, Transaction, receiver_account.owner_name, receiver_account.account_number)
+        .outerjoin(FraudCase, FraudCase.id == SupportQuery.fraud_case_id)
+        .outerjoin(Transaction, Transaction.id == FraudCase.transaction_id)
+        .outerjoin(receiver_account, receiver_account.id == Transaction.receiver_account_id)
+        .filter(
+            SupportQuery.user_id == current_user.id,
+            SupportQuery.query_type == "HIGH_RISK_TRANSFER",
+        )
+    )
+
+    if status:
+        normalized_status = status.strip().upper()
+        if normalized_status not in VALID_HIGH_RISK_TX_STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid high-risk status")
+        if normalized_status == HIGH_RISK_STATUS_PENDING:
+            query = query.filter(
+                or_(
+                    Transaction.transaction_status == TX_STATUS_PENDING_ADMIN,
+                    Transaction.note.like("Pending admin approval%"),
+                )
+            )
+        elif normalized_status == HIGH_RISK_STATUS_APPROVED:
+            query = query.filter(
+                or_(
+                    Transaction.transaction_status == TX_STATUS_ADMIN_APPROVED,
+                    Transaction.note.like("Approved by admin%"),
+                )
+            )
+        elif normalized_status == HIGH_RISK_STATUS_DENIED:
+            query = query.filter(
+                or_(
+                    Transaction.transaction_status == TX_STATUS_ADMIN_DENIED,
+                    Transaction.note.like("Denied by admin%"),
+                )
+            )
+        elif normalized_status == HIGH_RISK_STATUS_EXECUTED:
+            query = query.filter(
+                or_(
+                    Transaction.note.like("Transaction executed%"),
+                )
+            )
+
+    rows = (
+        query.order_by(SupportQuery.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    items: list[HighRiskTransferItem] = []
+    for support_query, transaction, receiver_name, receiver_account_number in rows:
+        if transaction is None:
+            continue
+
+        status_value = _high_risk_transaction_status(transaction, support_query)
+        default_message = HIGH_RISK_DEFAULT_MESSAGES.get(status_value)
+
+        items.append(
+            HighRiskTransferItem(
+                query_id=support_query.query_id,
+                transaction_id=transaction.transaction_id,
+                amount=float(transaction.amount),
+                transaction_type=transaction.transaction_type,
+                receiver_name=receiver_name,
+                receiver_account=receiver_account_number,
+                risk_score=float(transaction.final_score),
+                risk_percentage=_score_percentage(float(transaction.final_score)),
+                status=status_value,
+                admin_message=(support_query.admin_notes or "").strip() or default_message,
+                transaction_note=transaction.note or "",
+                created_at=support_query.created_at,
+                updated_at=support_query.updated_at,
+            )
+        )
+
+    return items
+
+
+@app.post(
+    "/my/high-risk-transactions/{transaction_id}/execute",
+    response_model=HighRiskTransferExecuteResponse,
+)
+def execute_my_high_risk_transaction(
+    transaction_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != "user":
+        raise HTTPException(status_code=403, detail="User access required")
+
+    row = (
+        db.query(SupportQuery, FraudCase, Transaction)
+        .join(FraudCase, FraudCase.id == SupportQuery.fraud_case_id)
+        .join(Transaction, Transaction.id == FraudCase.transaction_id)
+        .filter(
+            SupportQuery.user_id == current_user.id,
+            SupportQuery.query_type == "HIGH_RISK_TRANSFER",
+            Transaction.transaction_id == transaction_id,
+        )
+        .order_by(SupportQuery.created_at.desc())
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="High-risk transaction not found")
+
+    support_query, fraud_case, transaction = row
+    status_value = _high_risk_transaction_status(transaction, support_query)
+
+    if status_value == HIGH_RISK_STATUS_EXECUTED:
+        return HighRiskTransferExecuteResponse(
+            transaction_id=transaction.transaction_id,
+            executed=True,
+            status=HIGH_RISK_STATUS_EXECUTED,
+            message="Transaction was already executed.",
+            cashback_earned=round(float(transaction.cashback_amount or 0.0), 2),
+        )
+
+    if status_value == HIGH_RISK_STATUS_DENIED:
+        raise HTTPException(status_code=409, detail="Admin denied this transaction")
+
+    if status_value != HIGH_RISK_STATUS_APPROVED:
+        raise HTTPException(status_code=409, detail="Transaction is waiting for admin approval")
+
+    sender = db.query(Account).filter(Account.id == transaction.sender_account_id).first()
+    receiver = db.query(Account).filter(Account.id == transaction.receiver_account_id).first()
+    if sender is None or receiver is None:
+        raise HTTPException(status_code=404, detail="Linked accounts not found")
+
+    sender_balance = _decimal_to_float(sender.balance)
+    if transaction.amount > sender_balance:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot execute transaction: insufficient balance",
+        )
+
+    historical_success = (
+        db.query(func.count(Transaction.id))
+        .filter(
+            Transaction.user_id == transaction.user_id,
+            Transaction.note.like("Transaction executed%"),
+        )
+        .scalar()
+        or 0
+    )
+    cashback_earned = float(
+        random.randint(21, 100)
+        if historical_success == 0
+        else random.randint(1, 10)
+    )
+
+    sender.balance = _decimal_to_float(sender_balance - transaction.amount + cashback_earned)
+    receiver.balance = _decimal_to_float(receiver.balance) + transaction.amount
+    transaction.cashback_amount = cashback_earned
+    transaction.transaction_status = TX_STATUS_EXECUTED
+    transaction.executed_at = datetime.utcnow()
+    transaction.note = (
+        f"Transaction executed after admin approval. Cashback credited: INR {cashback_earned:.2f}"
+    )
+
+    fraud_case.admin_notes = (
+        (fraud_case.admin_notes or "")
+        + f" | USER_EXECUTED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z"
+    ).strip(" |")
+
+    _log_audit(
+        db,
+        actor=current_user,
+        action="execute_approved_high_risk_transaction",
+        target_type="transaction",
+        target_id=transaction.transaction_id,
+        details={"query_id": support_query.query_id, "decision": "EXECUTE"},
+    )
+
+    db.add(sender)
+    db.add(receiver)
+    db.add(transaction)
+    db.add(fraud_case)
+    db.commit()
+    db.refresh(transaction)
+
+    return HighRiskTransferExecuteResponse(
+        transaction_id=transaction.transaction_id,
+        executed=True,
+        status=HIGH_RISK_STATUS_EXECUTED,
+        message="Transfer completed successfully.",
+        cashback_earned=round(float(transaction.cashback_amount or 0.0), 2),
+    )
 
 
 @app.patch("/my-fraud-queries/{query_id}/respond", response_model=SupportQueryResponse)

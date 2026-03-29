@@ -391,6 +391,30 @@ class UserFraudQueryResponseRequest(BaseModel):
     user_response: str = Field(..., min_length=10, max_length=2000)
 
 
+class HighRiskTransferItem(BaseModel):
+    query_id: str
+    transaction_id: str
+    amount: float
+    transaction_type: str
+    receiver_name: str | None = None
+    receiver_account: str | None = None
+    risk_score: float
+    risk_percentage: int
+    status: str
+    admin_message: str | None = None
+    transaction_note: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class HighRiskTransferExecuteResponse(BaseModel):
+    transaction_id: str
+    executed: bool
+    status: str
+    message: str
+    cashback_earned: float
+
+
 class AnalystTransactionActionRequest(BaseModel):
     action: str = Field(..., pattern=r"^(confirm_fraud|mark_safe|escalate_admin)$")
     note: str | None = Field(default=None, max_length=1000)

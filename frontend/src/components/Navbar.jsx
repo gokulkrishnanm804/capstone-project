@@ -41,6 +41,13 @@ const NAV_ITEMS = [
     hideForRoles: ["admin"],
   },
   {
+    label: "Approvals",
+    path: "/high-risk-transactions",
+    icon: AlertTriangle,
+    auth: true,
+    hideForRoles: ["admin"],
+  },
+  {
     label: "Rewards",
     path: "/rewards",
     icon: Gift,

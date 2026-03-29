@@ -33,6 +33,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const TransactionHistoryPage = lazy(
   () => import("./pages/TransactionHistoryPage"),
 );
+const UserFraudQueriesPage = lazy(() => import("./pages/UserFraudQueriesPage"));
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -148,6 +149,18 @@ export default function App() {
                 <AnimatedPage>
                   <Suspense fallback={<PageFallback />}>
                     <TransactionHistoryPage />
+                  </Suspense>
+                </AnimatedPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/high-risk-transactions"
+            element={
+              <ProtectedRoute blockedRoles={["admin"]}>
+                <AnimatedPage>
+                  <Suspense fallback={<PageFallback />}>
+                    <UserFraudQueriesPage />
                   </Suspense>
                 </AnimatedPage>
               </ProtectedRoute>

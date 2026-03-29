@@ -14,7 +14,6 @@ import {
   setUpiPin,
   getIpCity,
   getProfile,
-  getMyFraudQueries,
   updateContactInfo,
 } from "../api";
 import { getApiErrorMessage } from "../utils/apiError";
@@ -66,7 +65,6 @@ export default function FraudDetectionPage() {
   const [error, setError] = useState("");
   const [pinError, setPinError] = useState("");
   const [success, setSuccess] = useState("");
-  const [userDecisionNotice, setUserDecisionNotice] = useState("");
   const [requiresSuspiciousConfirm, setRequiresSuspiciousConfirm] =
     useState(false);
   const [requiresHighRiskQuery, setRequiresHighRiskQuery] = useState(false);
@@ -223,26 +221,6 @@ export default function FraudDetectionPage() {
         setError(getApiErrorMessage(err, "Unable to load transfer context."));
       })
       .finally(() => setLoadingContext(false));
-  }, []);
-
-  useEffect(() => {
-    getMyFraudQueries({ limit: 25 })
-      .then((res) => {
-        const resolved = (res.data || []).find(
-          (item) =>
-            item.query_type === "HIGH_RISK_TRANSFER" && item.status === "RESOLVED",
-        );
-        if (!resolved?.admin_notes) return;
-        const note = resolved.admin_notes.toUpperCase();
-        if (note.includes("APPROVED")) {
-          setUserDecisionNotice("Admin approved your high-risk transfer request.");
-        } else if (note.includes("DENIED")) {
-          setUserDecisionNotice("Permission denied for your high-risk transfer request.");
-        }
-      })
-      .catch(() => {
-        /* non-blocking notification check */
-      });
   }, []);
 
   useEffect(() => {
@@ -446,7 +424,9 @@ export default function FraudDetectionPage() {
           setHighRiskQueryMessage("");
           setUpiPinInput("");
           setForm((old) => ({ ...old, amount: "" }));
-          setSuccess("High-risk transfer submitted to admin for approval.");
+          setSuccess(
+            "High-risk transfer submitted to admin for approval. Check Approvals page for admin decision and transfer action.",
+          );
           return;
         }
 
@@ -584,12 +564,6 @@ export default function FraudDetectionPage() {
           <p className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-200">
             <CheckCircle className="h-4 w-4" />
             {success}
-          </p>
-        )}
-
-        {userDecisionNotice && (
-          <p className="mt-4 rounded-xl bg-cyan-500/15 px-4 py-3 text-sm text-cyan-100">
-            {userDecisionNotice}
           </p>
         )}
 
