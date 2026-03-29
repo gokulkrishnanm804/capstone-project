@@ -560,12 +560,45 @@ export default function FraudDetectionPage() {
           Send money from one account to another in a secure workflow.
         </p>
 
-        {success && (
-          <p className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-200">
-            <CheckCircle className="h-4 w-4" />
-            {success}
-          </p>
-        )}
+        {success ? (
+          success === "Transaction Successful" ? (
+            <motion.div
+              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-emerald-100"
+              role="status"
+              aria-live="polite"
+            >
+              <motion.div
+                initial={{ scale: 0.4, rotate: -20, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ duration: 0.45, ease: "easeOut" }}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/20"
+              >
+                <motion.div
+                  animate={{ scale: [1, 1.12, 1] }}
+                  transition={{ duration: 0.9, repeat: 1, ease: "easeInOut" }}
+                >
+                  <CheckCircle className="h-5 w-5" />
+                </motion.div>
+              </motion.div>
+              <div>
+                <p className="text-sm font-semibold text-emerald-100">
+                  Transaction Successful
+                </p>
+                <p className="text-xs text-emerald-200/90">
+                  Funds transferred securely.
+                </p>
+              </div>
+            </motion.div>
+          ) : (
+            <p className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-200">
+              <CheckCircle className="h-4 w-4" />
+              {success}
+            </p>
+          )
+        ) : null}
 
         {error && (
           <p className="mt-4 rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-200">
