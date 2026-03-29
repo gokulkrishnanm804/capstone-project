@@ -2778,6 +2778,7 @@ def admin_operations_reports(
     )
     rows = query.all()
     total_transactions = len(rows)
+    total_amount_transacted = round(sum(row.amount for row in rows), 2)
     fraud_count = sum(1 for row in rows if row.prediction == "FRAUD")
     total_amount_blocked = round(sum(row.amount for row in rows if row.prediction == "FRAUD"), 2)
     fraud_rate = round((fraud_count / total_transactions * 100), 2) if total_transactions else 0.0
@@ -2795,6 +2796,7 @@ def admin_operations_reports(
         total_transactions=total_transactions,
         fraud_count=fraud_count,
         fraud_rate=fraud_rate,
+        total_amount_transacted=total_amount_transacted,
         total_amount_blocked=total_amount_blocked,
         top_flagged_user=top_flagged_user,
     )

@@ -88,8 +88,8 @@ export default function AdminOperationsReportsPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 {(() => {
                   const totalTransacted = Number(
-                    data.summary.total_amount_transactions ??
-                      data.summary.total_amount_transacted ??
+                    data.summary.total_amount_transacted ??
+                      data.summary.total_amount_transactions ??
                       data.summary.total_amount ??
                       data.summary.total_value ??
                       data.summary.total_volume ??
@@ -184,8 +184,8 @@ function exportCsv(data) {
     [
       "Total Amount Transacted",
       Number(
-        data.summary.total_amount_transactions ??
-          data.summary.total_amount_transacted ??
+        data.summary.total_amount_transacted ??
+          data.summary.total_amount_transactions ??
           data.summary.total_amount ??
           data.summary.total_value ??
           data.summary.total_volume ??
