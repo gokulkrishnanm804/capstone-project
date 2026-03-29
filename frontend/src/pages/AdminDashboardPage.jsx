@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
   Line,
@@ -133,25 +135,40 @@ export default function AdminDashboardPage() {
 
                 <div className="glass min-w-0 rounded-2xl p-5">
                   <h2 className="font-display text-lg font-semibold text-white">
-                    Model Performance
+                    Transactions by Type
                   </h2>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {data.model_performance.map((model) => (
-                      <div
-                        key={model.model}
-                        className="rounded-xl border border-slate-800 bg-slate-900/60 p-4"
-                      >
-                        <p className="text-sm text-slate-400">{model.model}</p>
-                        <p className="mt-1 text-xl font-semibold text-white">
-                          {(model.accuracy * 100).toFixed(1)}% accuracy
-                        </p>
-                        <p className="mt-2 text-xs text-slate-400">
-                          Precision {(model.precision * 100).toFixed(1)}% ·
-                          Recall {(model.recall * 100).toFixed(1)}% · F1{" "}
-                          {(model.f1 * 100).toFixed(1)}%
-                        </p>
-                      </div>
-                    ))}
+                  <div className="mt-4 h-72">
+                    <ResponsiveContainer
+                      width="100%"
+                      height="100%"
+                      minWidth={0}
+                      minHeight={1}
+                    >
+                      <BarChart data={data.transaction_types || []}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis
+                          dataKey="type"
+                          tick={{ fill: "#cbd5e1", fontSize: 11 }}
+                        />
+                        <YAxis
+                          tick={{ fill: "#cbd5e1", fontSize: 11 }}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#0f172a",
+                            borderColor: "#1e293b",
+                          }}
+                        />
+                        <Legend />
+                        <Bar
+                          dataKey="count"
+                          fill="#38bdf8"
+                          radius={[6, 6, 0, 0]}
+                          name="Transactions"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </section>
