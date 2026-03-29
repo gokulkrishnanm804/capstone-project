@@ -3135,6 +3135,36 @@ def admin_overview(current_user: User = Depends(require_admin), db: Session = De
         TransactionTypeStat(type="ACCOUNT_TRANSFER", count=int(volume_map.get("ACCOUNT_TRANSFER", volume_map.get("TRANSFER", 0)))),
     ]
 
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    trend_start = today - timedelta(days=6)
+    trend_rows = (
+        db.query(func.date(Transaction.created_at), Transaction.prediction, func.count(Transaction.id))
+        .filter(Transaction.created_at >= datetime.combine(trend_start, time.min))
+        .group_by(func.date(Transaction.created_at), Transaction.prediction)
+        .all()
+    )
+    trend_counts: dict[str, dict[str, int]] = {}
+    for day_value, prediction, count in trend_rows:
+        day_key = day_value if isinstance(day_value, str) else day_value.isoformat()
+        bucket = trend_counts.setdefault(day_key, {"fraud": 0, "normal": 0})
+        if (prediction or "").upper() == "FRAUD":
+            bucket["fraud"] += int(count or 0)
+        else:
+            bucket["normal"] += int(count or 0)
+
+    fraud_trend: list[AnalyticsPoint] = []
+    for offset in range(7):
+        day = trend_start + timedelta(days=offset)
+        day_key = day.isoformat()
+        day_counts = trend_counts.get(day_key, {"fraud": 0, "normal": 0})
+        fraud_trend.append(
+            AnalyticsPoint(
+                label=day_key,
+                fraud=day_counts["fraud"],
+                normal=day_counts["normal"],
+            )
+        )
+
     recent_activity = _audit_items(db, limit=10)
 
     return AdminOverviewResponse(
@@ -3145,6 +3175,7 @@ def admin_overview(current_user: User = Depends(require_admin), db: Session = De
         total_cashback=round(float(total_cashback), 2),
         system_status="ONLINE",
         model_performance=model_performance,
+        fraud_trend=fraud_trend,
         transaction_types=transaction_types,
         recent_activity=recent_activity,
     )

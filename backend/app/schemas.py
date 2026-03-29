@@ -450,6 +450,7 @@ class AdminOverviewResponse(BaseModel):
     total_cashback: float
     system_status: str
     model_performance: list[ModelPerformance]
+    fraud_trend: list[AnalyticsPoint]
     transaction_types: list[TransactionTypeStat]
     recent_activity: list[ActivityLogItem]
 

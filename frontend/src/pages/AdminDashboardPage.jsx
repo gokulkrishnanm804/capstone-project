@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -71,7 +71,7 @@ export default function AdminDashboardPage() {
               <section className="grid gap-4 xl:grid-cols-2">
                 <div className="glass min-w-0 rounded-2xl p-5">
                   <h2 className="font-display text-lg font-semibold text-white">
-                    Transactions by Type
+                    Transactions Trend (Last 7 Days)
                   </h2>
                   <div className="mt-4 h-72">
                     <ResponsiveContainer
@@ -80,24 +80,53 @@ export default function AdminDashboardPage() {
                       minWidth={0}
                       minHeight={1}
                     >
-                      <BarChart data={data.transaction_types}>
+                      <LineChart data={data.fraud_trend || []}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                         <XAxis
-                          dataKey="type"
+                          dataKey="label"
                           tick={{ fill: "#cbd5e1", fontSize: 11 }}
+                          tickFormatter={(value) =>
+                            new Date(value).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })
+                          }
                         />
                         <YAxis
                           tick={{ fill: "#cbd5e1", fontSize: 11 }}
                           allowDecimals={false}
                         />
-                        <Tooltip />
-                        <Legend />
-                        <Bar
-                          dataKey="count"
-                          fill="#38bdf8"
-                          radius={[6, 6, 0, 0]}
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#0f172a",
+                            borderColor: "#1e293b",
+                          }}
+                          labelFormatter={(value) =>
+                            new Date(value).toLocaleDateString(undefined, {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })
+                          }
                         />
-                      </BarChart>
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="fraud"
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          dot={false}
+                          name="Fraud"
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="normal"
+                          stroke="#22d3ee"
+                          strokeWidth={2}
+                          dot={false}
+                          name="Safe"
+                        />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
