@@ -281,6 +281,7 @@ class AnalystReportSummary(BaseModel):
     total_amount_transacted: float
     total_amount_blocked: float
     total_cashback_given: float
+    total_cashback_all_users: float
     top_flagged_user: str | None
 
 
