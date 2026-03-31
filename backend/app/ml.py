@@ -39,6 +39,8 @@ class ModelService:
         self.feature_order: list[str] = metadata.get("feature_columns", [])
         self.feature_stats: dict[str, dict[str, float]] = metadata.get("feature_stats", {})
         self.metadata: dict[str, Any] = metadata
+        anomaly_meta = metadata.get("anomaly", {})
+        self.anomaly_threshold: float = float(anomaly_meta.get("threshold", 0.5))
 
         self.rf_explainer = shap.TreeExplainer(self.random_forest)
         self.xgb_explainer = shap.TreeExplainer(self.xgboost)
@@ -98,8 +100,9 @@ class ModelService:
         iso_raw = float(self.isolation_forest.decision_function(scaled)[0])
         iso_score = float(1 / (1 + np.exp(iso_raw * 5)))
 
-        fusion_score = 0.4 * rf_prob + 0.4 * xgb_prob + 0.2 * iso_score
-        prediction = "FRAUD" if fusion_score >= 0.5 else "SAFE"
+        supervised_score = 0.5 * rf_prob + 0.5 * xgb_prob
+        prediction = "FRAUD" if supervised_score >= 0.5 else "SAFE"
+        is_anomaly = bool(iso_score >= self.anomaly_threshold)
 
         importance = self._explain(scaled)
         transaction_id = uuid.uuid4().hex
@@ -108,9 +111,12 @@ class ModelService:
             "transaction_id": transaction_id,
             "random_forest_probability": rf_prob,
             "xgboost_probability": xgb_prob,
+            "supervised_fusion_score": supervised_score,
+            "anomaly_score": iso_score,
+            "is_anomaly": is_anomaly,
             "isolation_forest_score": iso_score,
-            "fusion_score": fusion_score,
-            "fraud_probability": fusion_score,
+            "fusion_score": supervised_score,
+            "fraud_probability": supervised_score,
             "prediction": prediction,
             "feature_importance": importance,
             "feature_payload": {f: float(features.get(f, 0.0)) for f in self.feature_order},

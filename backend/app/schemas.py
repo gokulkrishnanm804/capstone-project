@@ -117,6 +117,9 @@ class PredictionBreakdown(BaseModel):
     fraud_probability: float
     random_forest_probability: float
     xgboost_probability: float
+    supervised_fusion_score: float
+    anomaly_score: float
+    is_anomaly: bool
     isolation_forest_score: float
     final_fusion_score: float
     risk_band: str

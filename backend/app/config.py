@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     database_url: str = "mysql+pymysql://root:root@localhost:3306/fraudguard_ai"
     model_dir: Path = BASE_DIR / "models"
-    data_path: Path = BASE_DIR / "data" / "creditcard.csv"
+    data_path: Path = BASE_DIR / "data" / "PS_20174392719_1491204439457_log.csv"
 
     @field_validator("model_dir", "data_path", mode="before")
     @classmethod

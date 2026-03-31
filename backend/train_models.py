@@ -1,8 +1,7 @@
-"""Train fraud detection models using synthetic data aligned to app features."""
+"""Train fraud detection models from real transaction dataset."""
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 import joblib
@@ -13,10 +12,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
+from app.config import settings
+
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 MODEL_DIR = Path(__file__).resolve().parent / "models"
 BACKGROUND_SAMPLES = 500
+MIN_CONTAMINATION = 0.001
+MAX_CONTAMINATION = 0.2
 FEATURE_COLUMNS = [
     "amount",
     "is_new_beneficiary",
@@ -26,73 +29,68 @@ FEATURE_COLUMNS = [
 ]
 
 
-@dataclass
-class SyntheticConfig:
-    samples: int = 5_000
-    fraud_ratio: float = 0.20
-    currency_scale: tuple[float, float] = (200.0, 150_000.0)
+def _resolve_data_path() -> Path:
+    configured_path = Path(settings.data_path)
+    if configured_path.exists():
+        return configured_path
+
+    # Fallback to the dataset bundled in this repository.
+    fallback = Path(__file__).resolve().parent / "data" / "PS_20174392719_1491204439457_log.csv"
+    if fallback.exists():
+        return fallback
+    raise FileNotFoundError(
+        "No dataset file found. Set DATA_PATH or place PS_20174392719_1491204439457_log.csv in backend/data/."
+    )
 
 
-def _clip(value: float, low: float, high: float) -> float:
-    return float(max(low, min(high, value)))
-
-
-def generate_synthetic_dataset(config: SyntheticConfig) -> pd.DataFrame:
-    rng = np.random.default_rng(RANDOM_STATE)
-    n_fraud = int(config.samples * config.fraud_ratio)
-    n_safe = config.samples - n_fraud
-
-    rows = []
-
-    # SAFE profiles: modest amounts, known beneficiary/location, day-time.
-    for _ in range(n_safe):
-        amount = rng.uniform(200, 45_000)
-        ratio = _clip(rng.normal(18, 9), 0, 60)
-        is_new_beneficiary = 0
-        is_new_location = 0
-        is_night = 1 if rng.random() < 0.08 else 0
-        label = 0
-        rows.append(
-            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
-        )
-
-    # FRAUD scenario A: high ratio + unfamiliar context.
-    for _ in range(n_fraud // 2):
-        base_balance = rng.uniform(40_000, 160_000)
-        ratio = _clip(rng.uniform(70, 180), 60, 250)
-        amount = _clip(base_balance * (ratio / 100), 10_000, config.currency_scale[1])
-        is_new_beneficiary = 1
-        is_new_location = 1 if rng.random() < 0.7 else 0
-        is_night = 1 if rng.random() < 0.35 else 0
-        label = 1
-        rows.append(
-            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
-        )
-
-    # FRAUD scenario B: large night transfer to new beneficiary.
-    for _ in range(n_fraud - (n_fraud // 2)):
-        amount = rng.uniform(55_000, config.currency_scale[1])
-        ratio = _clip(rng.uniform(65, 140), 60, 250)
-        is_new_beneficiary = 1
-        is_new_location = 1 if rng.random() < 0.4 else 0
-        is_night = 1
-        label = 1
-        rows.append(
-            [amount, is_new_beneficiary, is_new_location, is_night, ratio, label]
-        )
-
-    df = pd.DataFrame(rows, columns=[*FEATURE_COLUMNS, "label"])
-
-    # Shuffle to avoid ordered blocks.
-    df = df.sample(frac=1.0, random_state=RANDOM_STATE).reset_index(drop=True)
+def load_dataset(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    required = {
+        "step",
+        "type",
+        "amount",
+        "nameOrig",
+        "nameDest",
+        "oldbalanceOrg",
+        "isFraud",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Dataset missing required columns: {sorted(missing)}")
     return df
+
+
+def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    ordered = df.sort_values(["nameOrig", "step"]).copy()
+
+    # First transfer to a beneficiary from the same sender behaves like "new beneficiary".
+    ordered["is_new_beneficiary"] = (
+        ordered.groupby(["nameOrig", "nameDest"]).cumcount() == 0
+    ).astype(float)
+
+    # First time a sender uses a transaction type is treated as unfamiliar behavior.
+    ordered["is_new_location"] = (
+        ordered.groupby(["nameOrig", "type"]).cumcount() == 0
+    ).astype(float)
+
+    hour_of_day = ordered["step"].astype(int) % 24
+    ordered["is_night_transaction"] = ((hour_of_day >= 22) | (hour_of_day <= 5)).astype(float)
+
+    old_balance = ordered["oldbalanceOrg"].clip(lower=1.0)
+    ratio = (ordered["amount"] / old_balance) * 100.0
+    ordered["amount_vs_balance_ratio"] = ratio.clip(lower=0.0, upper=1000.0)
+
+    ordered["amount"] = ordered["amount"].astype(float).clip(lower=0.0)
+    ordered["label"] = ordered["isFraud"].astype(int)
+    return ordered[[*FEATURE_COLUMNS, "label"]]
 
 
 def train_models() -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-    config = SyntheticConfig()
-    df = generate_synthetic_dataset(config)
+    data_path = _resolve_data_path()
+    raw = load_dataset(data_path)
+    df = engineer_features(raw)
 
     X = df[FEATURE_COLUMNS]
     y = df["label"]
@@ -142,14 +140,19 @@ def train_models() -> None:
     xgb_model.fit(X_train_scaled, y_train)
     joblib.dump(xgb_model, MODEL_DIR / "xgb.pkl")
 
+    contamination = float(min(max(y.mean(), MIN_CONTAMINATION), MAX_CONTAMINATION))
     iso = IsolationForest(
         n_estimators=320,
-        contamination=config.fraud_ratio,
+        contamination=contamination,
         random_state=RANDOM_STATE,
         n_jobs=-1,
     )
-    iso.fit(X_full_scaled)
+    iso.fit(X_train_scaled)
     joblib.dump(iso, MODEL_DIR / "iso.pkl")
+
+    train_iso_raw = iso.decision_function(X_train_scaled)
+    train_iso_scores = 1 / (1 + np.exp(train_iso_raw * 5))
+    anomaly_threshold = float(np.quantile(train_iso_scores, 1 - contamination))
 
     feature_stats = {
         column: {
@@ -163,11 +166,18 @@ def train_models() -> None:
 
     metadata = {
         "feature_columns": FEATURE_COLUMNS,
+        "dataset_path": str(data_path),
         "train_shape": list(X_train.shape),
         "test_shape": list(X_test.shape),
         "feature_stats": feature_stats,
         "fraud_ratio": float(fraud_ratio),
-        "samples": config.samples,
+        "samples": int(len(df)),
+        "supervised_weights": {"random_forest": 0.5, "xgboost": 0.5},
+        "anomaly": {
+            "model": "IsolationForest",
+            "contamination": contamination,
+            "threshold": anomaly_threshold,
+        },
     }
     (MODEL_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
@@ -175,6 +185,9 @@ def train_models() -> None:
     joblib.dump(background, MODEL_DIR / "background.pkl")
 
     print("Artifacts saved in", MODEL_DIR)
+    print("Dataset:", data_path)
+    print("Samples:", len(df), "Fraud ratio:", round(float(fraud_ratio), 6))
+    print("Anomaly threshold:", round(anomaly_threshold, 6))
 
 
 if __name__ == "__main__":
