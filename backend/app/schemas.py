@@ -159,6 +159,8 @@ class TransactionExecutionResponse(BaseModel):
     risk_percentage: int
     pending_query_id: str | None = None
     pending_case_id: str | None = None
+    otp_expires_at: datetime | None = None
+    otp_attempts_remaining: int | None = None
     risk_signals: RiskSignals
     prediction: PredictionBreakdown
 
@@ -373,6 +375,11 @@ class SupportQueryResponse(BaseModel):
     transaction_risk_score: float | None = None
     transaction_prediction: str | None = None
     transaction_note: str | None = None
+    otp_status: str | None = None
+    otp_attempt_count: int | None = None
+    otp_max_attempts: int | None = None
+    otp_expires_at: datetime | None = None
+    otp_verified_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -418,6 +425,12 @@ class HighRiskTransferExecuteResponse(BaseModel):
     status: str
     message: str
     cashback_earned: float
+    remaining_attempts: int | None = None
+    user_blocked: bool = False
+
+
+class HighRiskOtpVerifyRequest(BaseModel):
+    otp_code: str = Field(..., pattern=r"^\d{6}$")
 
 
 class AnalystTransactionActionRequest(BaseModel):

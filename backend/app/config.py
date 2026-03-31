@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     database_url: str = "mysql+pymysql://root:root@localhost:3306/fraudguard_ai"
     model_dir: Path = BASE_DIR / "models"
     data_path: Path = BASE_DIR / "data" / "PS_20174392719_1491204439457_log.csv"
+    otp_expiry_minutes: int = 10
+    otp_max_attempts: int = 3
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
 
     @field_validator("model_dir", "data_path", mode="before")
     @classmethod

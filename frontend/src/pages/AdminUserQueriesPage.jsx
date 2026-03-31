@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AdminSidebar from "../components/AdminSidebar";
-import { decideHighRiskTransaction, getSupportQueries } from "../api";
+import { getSupportQueries } from "../api";
 import { getApiErrorMessage } from "../utils/apiError";
 
 export default function AdminUserQueriesPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submittingId, setSubmittingId] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -31,35 +29,6 @@ export default function AdminUserQueriesPage() {
     load();
   }, []);
 
-  const takeDecision = async (queryId, decision) => {
-    setError("");
-    setSuccess("");
-    const defaultNote =
-      decision === "ALLOW"
-        ? "APPROVED: Transaction allowed by admin"
-        : "DENIED: Permission denied";
-    const note = window.prompt("Admin note", defaultNote);
-    if (note === null) return;
-
-    setSubmittingId(queryId);
-    try {
-      await decideHighRiskTransaction(queryId, {
-        decision,
-        admin_notes: note.trim() || defaultNote,
-      });
-      setSuccess(
-        decision === "ALLOW"
-          ? "Transaction permission granted."
-          : "Transaction permission denied.",
-      );
-      await load();
-    } catch (err) {
-      setError(getApiErrorMessage(err, "Unable to update decision."));
-    } finally {
-      setSubmittingId("");
-    }
-  };
-
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="flex gap-6">
@@ -69,7 +38,7 @@ export default function AdminUserQueriesPage() {
             User Queries
           </h1>
           <p className="mt-1 text-slate-300">
-            Review high-risk transfer requests and allow or deny execution.
+            High-risk transaction history with OTP verification outcomes.
           </p>
 
           {error && (
@@ -77,12 +46,6 @@ export default function AdminUserQueriesPage() {
               {error}
             </p>
           )}
-          {success && (
-            <p className="mt-4 rounded-xl bg-emerald-500/15 px-4 py-3 text-sm text-emerald-200">
-              {success}
-            </p>
-          )}
-
           {loading ? (
             <div className="mt-6 text-slate-300">Loading user queries...</div>
           ) : (
@@ -97,7 +60,9 @@ export default function AdminUserQueriesPage() {
                     <th className="px-4 py-3">Risk</th>
                     <th className="px-4 py-3">Message</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Actions</th>
+                    <th className="px-4 py-3">OTP</th>
+                    <th className="px-4 py-3">Attempts</th>
+                    <th className="px-4 py-3">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -105,7 +70,6 @@ export default function AdminUserQueriesPage() {
                     const riskPercent = Number.isFinite(row.transaction_risk_score)
                       ? Math.round(row.transaction_risk_score * 100)
                       : null;
-                    const busy = submittingId === row.query_id;
                     return (
                       <tr key={row.query_id} className="border-t border-slate-800">
                         <td className="px-4 py-3 font-mono text-xs">
@@ -141,37 +105,22 @@ export default function AdminUserQueriesPage() {
                         <td className="px-4 py-3 max-w-[320px]">{row.message}</td>
                         <td className="px-4 py-3">{row.status}</td>
                         <td className="px-4 py-3">
-                          {row.status === "OPEN" ? (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                className="btn-primary px-3 py-1.5 text-xs"
-                                disabled={busy}
-                                onClick={() => takeDecision(row.query_id, "ALLOW")}
-                              >
-                                Allow Transaction
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-secondary px-3 py-1.5 text-xs"
-                                disabled={busy}
-                                onClick={() => takeDecision(row.query_id, "DENY")}
-                              >
-                                Not Allow Transaction
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400">
-                              {row.admin_notes || "Resolved"}
-                            </span>
-                          )}
+                          {row.otp_status || "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {typeof row.otp_attempt_count === "number"
+                            ? `${row.otp_attempt_count}/${row.otp_max_attempts || 3}`
+                            : "-"}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-400 max-w-[320px]">
+                          {row.admin_notes || row.transaction_note || "-"}
                         </td>
                       </tr>
                     );
                   })}
                   {!rows.length && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-6 text-slate-400">
+                      <td colSpan={10} className="px-4 py-6 text-slate-400">
                         No user queries available.
                       </td>
                     </tr>

@@ -141,6 +141,14 @@ class SupportQuery(Base):
     status: Mapped[str] = mapped_column(String(20), default="OPEN", index=True)
     analyst_notes: Mapped[str] = mapped_column(Text, default="")
     admin_notes: Mapped[str] = mapped_column(Text, default="")
+    otp_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    otp_attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    otp_max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    otp_status: Mapped[str] = mapped_column(String(20), default="NOT_REQUIRED", index=True)
+    otp_delivery_channel: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    otp_delivery_target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    otp_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

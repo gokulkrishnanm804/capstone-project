@@ -71,6 +71,8 @@ export const getMyHighRiskTransactions = (params) =>
   API.get("/my/high-risk-transactions", { params });
 export const executeMyHighRiskTransaction = (transactionId) =>
   API.post(`/my/high-risk-transactions/${transactionId}/execute`);
+export const verifyMyHighRiskOtp = (transactionId, data) =>
+  API.post(`/my/high-risk-transactions/${transactionId}/verify-otp`, data);
 export const getFraudAnalytics = () => API.get("/fraud-analytics");
 export const getModelInsights = () => API.get("/model-insights");
 export const getAdminOverview = () => API.get("/admin/overview");

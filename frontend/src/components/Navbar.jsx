@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertTriangle,
   BarChart3,
   ChevronDown,
   Gift,
@@ -37,13 +36,6 @@ const NAV_ITEMS = [
     label: "History",
     path: "/history",
     icon: History,
-    auth: true,
-    hideForRoles: ["admin"],
-  },
-  {
-    label: "Approvals",
-    path: "/high-risk-transactions",
-    icon: AlertTriangle,
     auth: true,
     hideForRoles: ["admin"],
   },

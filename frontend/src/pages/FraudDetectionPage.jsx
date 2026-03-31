@@ -15,6 +15,7 @@ import {
   getIpCity,
   getProfile,
   updateContactInfo,
+  verifyMyHighRiskOtp,
 } from "../api";
 import { getApiErrorMessage } from "../utils/apiError";
 
@@ -64,11 +65,15 @@ export default function FraudDetectionPage() {
   const [upiPinInput, setUpiPinInput] = useState("");
   const [error, setError] = useState("");
   const [pinError, setPinError] = useState("");
+  const [otpError, setOtpError] = useState("");
   const [success, setSuccess] = useState("");
   const [requiresSuspiciousConfirm, setRequiresSuspiciousConfirm] =
     useState(false);
-  const [requiresHighRiskQuery, setRequiresHighRiskQuery] = useState(false);
-  const [highRiskQueryMessage, setHighRiskQueryMessage] = useState("");
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpInput, setOtpInput] = useState("");
+  const [otpPendingTransactionId, setOtpPendingTransactionId] = useState("");
+  const [otpRemainingAttempts, setOtpRemainingAttempts] = useState(3);
+  const [otpExpiresAt, setOtpExpiresAt] = useState("");
   const [profile, setProfile] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -390,7 +395,6 @@ export default function FraudDetectionPage() {
         : undefined,
       transaction_time: serverTime ? serverTime.toISOString() : null,
       suspicious_acknowledged: Boolean(options.suspiciousAcknowledged),
-      high_risk_query_message: options.highRiskQueryMessage || undefined,
       mode,
       upi_pin: mode === "send" ? upiPin : undefined,
     };
@@ -402,31 +406,21 @@ export default function FraudDetectionPage() {
       if (mode === "send") {
         if (response.data.action_required === "SUSPICIOUS_CONFIRMATION") {
           setRequiresSuspiciousConfirm(true);
-          setRequiresHighRiskQuery(false);
-          setHighRiskQueryMessage("");
           setPinError("Suspicious transaction detected. Confirm again to continue.");
           return;
         }
 
-        if (response.data.action_required === "CONTACT_ADMIN") {
-          setRequiresSuspiciousConfirm(false);
-          setRequiresHighRiskQuery(true);
-          setPinError(
-            "High fraud risk detected. Enter your query for admin approval.",
-          );
-          return;
-        }
-
-        if (response.data.transfer_state === "PENDING_ADMIN_APPROVAL") {
+        if (response.data.action_required === "OTP_VERIFICATION") {
           setShowPinModal(false);
           setRequiresSuspiciousConfirm(false);
-          setRequiresHighRiskQuery(false);
-          setHighRiskQueryMessage("");
           setUpiPinInput("");
-          setForm((old) => ({ ...old, amount: "" }));
-          setSuccess(
-            "High-risk transfer submitted to admin for approval. Check Approvals page for admin decision and transfer action.",
-          );
+          setOtpInput("");
+          setOtpError("");
+          setOtpPendingTransactionId(response.data.transaction_id || "");
+          setOtpRemainingAttempts(response.data.otp_attempts_remaining || 3);
+          setOtpExpiresAt(response.data.otp_expires_at || "");
+          setShowOtpModal(true);
+          setSuccess("High-risk transaction detected. OTP sent to your registered email.");
           return;
         }
 
@@ -441,8 +435,6 @@ export default function FraudDetectionPage() {
         setForm((old) => ({ ...old, amount: "" }));
         setShowPinModal(false);
         setRequiresSuspiciousConfirm(false);
-        setRequiresHighRiskQuery(false);
-        setHighRiskQueryMessage("");
         setUpiPinInput("");
         setSuccess("Transaction Successful");
         return;
@@ -471,8 +463,6 @@ export default function FraudDetectionPage() {
           setForm((old) => ({ ...old, amount: "" }));
           setShowPinModal(false);
           setRequiresSuspiciousConfirm(false);
-          setRequiresHighRiskQuery(false);
-          setHighRiskQueryMessage("");
           setUpiPinInput("");
           setSuccess("Transaction Successful");
           return;
@@ -504,10 +494,9 @@ export default function FraudDetectionPage() {
     if (mode === "send") {
       setError("");
       setPinError("");
+      setOtpError("");
       setUpiPinInput("");
       setRequiresSuspiciousConfirm(false);
-      setRequiresHighRiskQuery(false);
-      setHighRiskQueryMessage("");
       setShowPinModal(true);
       return;
     }
@@ -521,16 +510,66 @@ export default function FraudDetectionPage() {
       setPinError("UPI PIN must be 4 to 6 digits.");
       return;
     }
-    if (requiresHighRiskQuery && highRiskQueryMessage.trim().length < 10) {
-      setPinError("Query must be at least 10 characters for admin review.");
-      return;
-    }
     executeTransaction("send", trimmedPin, {
       suspiciousAcknowledged: requiresSuspiciousConfirm,
-      highRiskQueryMessage: requiresHighRiskQuery
-        ? highRiskQueryMessage.trim()
-        : undefined,
     });
+  };
+
+  const verifyOtpAndExecute = async () => {
+    const otp = otpInput.trim();
+    if (!/^\d{6}$/.test(otp)) {
+      setOtpError("OTP must be 6 digits.");
+      return;
+    }
+    if (!otpPendingTransactionId) {
+      setOtpError("Missing transaction context for OTP verification.");
+      return;
+    }
+
+    setSubmitting(true);
+    setOtpError("");
+    setError("");
+    setSuccess("");
+    try {
+      const res = await verifyMyHighRiskOtp(otpPendingTransactionId, {
+        otp_code: otp,
+      });
+      const data = res.data || {};
+      if (data.executed) {
+        setShowOtpModal(false);
+        setOtpInput("");
+        setOtpPendingTransactionId("");
+        setForm((old) => ({ ...old, amount: "" }));
+        setSuccess(
+          `Transaction Successful. Cashback credited: INR ${Number(data.cashback_earned || 0).toFixed(2)}.`,
+        );
+        const refreshed = await getSimulationContext();
+        const sender = refreshed.data?.sender_account;
+        if (sender) {
+          setContext((old) =>
+            old
+              ? {
+                  ...old,
+                  sender_account: sender,
+                }
+              : old,
+          );
+        }
+        return;
+      }
+
+      setOtpRemainingAttempts(data.remaining_attempts ?? otpRemainingAttempts);
+      if (data.user_blocked) {
+        setShowOtpModal(false);
+        setError(data.message || "Account blocked after repeated invalid OTP attempts.");
+        return;
+      }
+      setOtpError(data.message || "OTP verification failed.");
+    } catch (err) {
+      setOtpError(getApiErrorMessage(err, "Unable to verify OTP."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const receiverAccount = form.receiver_account;
@@ -1058,11 +1097,9 @@ export default function FraudDetectionPage() {
                   Confirm UPI PIN
                 </h2>
                 <p className="mt-1 text-sm text-slate-300">
-                  {requiresHighRiskQuery
-                    ? "High-risk transfer blocked. Share your query to contact admin."
-                    : requiresSuspiciousConfirm
-                      ? "Suspicious transfer detected. Confirm again to continue."
-                      : "Authorize this transfer securely using your UPI PIN."}
+                  {requiresSuspiciousConfirm
+                    ? "Suspicious transfer detected. Confirm again to continue."
+                    : "Authorize this transfer securely using your UPI PIN."}
                 </p>
               </div>
               <button
@@ -1071,8 +1108,6 @@ export default function FraudDetectionPage() {
                   if (submitting) return;
                   setShowPinModal(false);
                   setRequiresSuspiciousConfirm(false);
-                  setRequiresHighRiskQuery(false);
-                  setHighRiskQueryMessage("");
                 }}
                 className="rounded-lg border border-slate-700 p-1.5 text-slate-300 transition hover:border-slate-500 hover:text-white"
                 aria-label="Close UPI PIN modal"
@@ -1106,20 +1141,6 @@ export default function FraudDetectionPage() {
               />
             </div>
 
-            {requiresHighRiskQuery && (
-              <div className="mt-4">
-                <label className="mb-1 block text-sm text-slate-300">
-                  Contact Admin Query
-                </label>
-                <textarea
-                  className="input-dark min-h-[90px]"
-                  value={highRiskQueryMessage}
-                  onChange={(event) => setHighRiskQueryMessage(event.target.value)}
-                  placeholder="Explain why this transaction is valid."
-                />
-              </div>
-            )}
-
             {pinError && (
               <p className="mt-3 rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">
                 {pinError}
@@ -1133,8 +1154,6 @@ export default function FraudDetectionPage() {
                 onClick={() => {
                   setShowPinModal(false);
                   setRequiresSuspiciousConfirm(false);
-                  setRequiresHighRiskQuery(false);
-                  setHighRiskQueryMessage("");
                 }}
                 disabled={submitting}
               >
@@ -1148,11 +1167,103 @@ export default function FraudDetectionPage() {
               >
                 {submitting
                   ? "Processing..."
-                  : requiresHighRiskQuery
-                    ? "Submit Query"
-                    : requiresSuspiciousConfirm
+                  : requiresSuspiciousConfirm
                       ? "Confirm Anyway"
                       : "Confirm Transfer"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {showOtpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-slate-950/95 p-5 shadow-[0_20px_80px_-20px_rgba(251,191,36,0.45)]"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-xl font-semibold text-white">
+                  Verify High-Risk OTP
+                </h2>
+                <p className="mt-1 text-sm text-slate-300">
+                  Enter the 6-digit OTP sent to your registered email to complete this transfer.
+                </p>
+                {otpExpiresAt && (
+                  <p className="mt-1 text-xs text-amber-200">
+                    Expires at {new Date(otpExpiresAt).toLocaleString("en-IN")}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (submitting) return;
+                  setShowOtpModal(false);
+                  setOtpInput("");
+                }}
+                className="rounded-lg border border-slate-700 p-1.5 text-slate-300 transition hover:border-slate-500 hover:text-white"
+                aria-label="Close OTP modal"
+                disabled={submitting}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <label className="mb-1 block text-sm text-slate-300">OTP</label>
+              <input
+                type="text"
+                className="input-dark"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                minLength={6}
+                maxLength={6}
+                autoFocus
+                value={otpInput}
+                onChange={(event) =>
+                  setOtpInput(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    verifyOtpAndExecute();
+                  }
+                }}
+                placeholder="Enter 6-digit OTP"
+              />
+              <p className="mt-2 text-xs text-slate-400">
+                Remaining attempts: {otpRemainingAttempts}
+              </p>
+            </div>
+
+            {otpError && (
+              <p className="mt-3 rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">
+                {otpError}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                className="btn-secondary flex-1"
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtpInput("");
+                }}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary flex-1"
+                onClick={verifyOtpAndExecute}
+                disabled={submitting}
+              >
+                {submitting ? "Verifying..." : "Verify OTP"}
               </button>
             </div>
           </motion.div>

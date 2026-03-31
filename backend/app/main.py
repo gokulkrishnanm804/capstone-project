@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import re
 import random
+import smtplib
 import threading
 import statistics
 import urllib.request
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from email.message import EmailMessage
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,6 +30,7 @@ from .auth import (
 )
 import train_models as training_module
 from .db import Base, engine, get_db
+from .config import settings
 from .ml import get_model_service
 from .models import (
     Account,
@@ -75,6 +78,7 @@ from .schemas import (
     FeatureImportance,
     HighRiskTransferExecuteResponse,
     HighRiskTransferItem,
+    HighRiskOtpVerifyRequest,
     HighRiskDecisionRequest,
     LoginRequest,
     ModelInsightResponse,
@@ -291,7 +295,9 @@ def _build_model_performance(db: Session) -> tuple[list[ModelPerformance], list[
 
 
 def _compute_training_metrics() -> dict[str, dict[str, float]]:
-    df = training_module.generate_synthetic_dataset(training_module.SyntheticConfig())
+    data_path = training_module._resolve_data_path()
+    raw_df = training_module.load_dataset(data_path)
+    df = training_module.engineer_features(raw_df)
     X = df[training_module.FEATURE_COLUMNS]
     y = df["label"]
     from sklearn.model_selection import train_test_split
@@ -314,7 +320,7 @@ def _compute_training_metrics() -> dict[str, dict[str, float]]:
 
     rf_pred = rf.predict(X_test_scaled)
     xgb_pred = xgb_model.predict(X_test_scaled)
-    iso_pred_raw = iso.predict(scaler.transform(X_test))
+    iso_pred_raw = iso.predict(X_test_scaled)
     iso_pred = [1 if p == -1 else 0 for p in iso_pred_raw]
 
     def _metrics(y_true, preds):
@@ -410,6 +416,53 @@ def _new_fraud_case_id() -> str:
 def _new_support_query_id() -> str:
     token = uuid.uuid4().hex[:10].upper()
     return f"QRY{token}"
+
+
+def _generate_otp_code() -> str:
+    return f"{random.randint(0, 999999):06d}"
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    if not domain:
+        return "***"
+    if len(local) <= 2:
+        masked_local = "*" * len(local)
+    else:
+        masked_local = local[:1] + ("*" * (len(local) - 2)) + local[-1:]
+    return f"{masked_local}@{domain}"
+
+
+def _send_otp_email(*, recipient_email: str, otp_code: str, transaction_id: str, amount: float) -> None:
+    if not settings.smtp_host or not settings.smtp_from_email:
+        raise RuntimeError("SMTP is not configured. Set SMTP_HOST and SMTP_FROM_EMAIL.")
+
+    expires_minutes = int(max(settings.otp_expiry_minutes, 1))
+    message = EmailMessage()
+    message["Subject"] = "SentinelPay OTP Verification"
+    message["From"] = settings.smtp_from_email
+    message["To"] = recipient_email
+    message.set_content(
+        "\n".join(
+            [
+                "Your SentinelPay OTP for high-risk transaction verification:",
+                "",
+                f"OTP: {otp_code}",
+                f"Transaction ID: {transaction_id}",
+                f"Amount: INR {amount:.2f}",
+                "",
+                f"This OTP expires in {expires_minutes} minutes.",
+                "Do not share this OTP with anyone.",
+            ]
+        )
+    )
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        if settings.smtp_use_tls:
+            smtp.starttls()
+        if settings.smtp_username and settings.smtp_password:
+            smtp.login(settings.smtp_username, settings.smtp_password)
+        smtp.send_message(message)
 
 
 def _decimal_to_float(value: Decimal | float) -> float:
@@ -524,6 +577,8 @@ TX_STATUS_EXECUTED = "EXECUTED"
 TX_STATUS_PENDING_ADMIN = "PENDING_ADMIN_APPROVAL"
 TX_STATUS_ADMIN_APPROVED = "ADMIN_APPROVED"
 TX_STATUS_ADMIN_DENIED = "ADMIN_DENIED"
+TX_STATUS_OTP_PENDING = "OTP_PENDING"
+TX_STATUS_OTP_FAILED = "OTP_FAILED"
 
 ADMIN_DECISION_ALLOW = "ALLOW"
 ADMIN_DECISION_DENY = "DENY"
@@ -539,11 +594,17 @@ VALID_HIGH_RISK_TX_STATUSES = {
     HIGH_RISK_STATUS_EXECUTED,
 }
 HIGH_RISK_DEFAULT_MESSAGES = {
-    HIGH_RISK_STATUS_PENDING: "Waiting for admin approval.",
-    HIGH_RISK_STATUS_APPROVED: "Admin approved this transaction. You can transfer now.",
-    HIGH_RISK_STATUS_DENIED: "Admin denied this transaction.",
+    HIGH_RISK_STATUS_PENDING: "Waiting for OTP verification.",
+    HIGH_RISK_STATUS_APPROVED: "OTP verified. Transaction approved.",
+    HIGH_RISK_STATUS_DENIED: "Transaction denied.",
     HIGH_RISK_STATUS_EXECUTED: "Transaction completed.",
 }
+
+OTP_STATUS_NOT_REQUIRED = "NOT_REQUIRED"
+OTP_STATUS_PENDING = "PENDING"
+OTP_STATUS_VERIFIED = "VERIFIED"
+OTP_STATUS_FAILED = "FAILED"
+OTP_STATUS_EXPIRED = "EXPIRED"
 
 
 def _score_percentage(score: float) -> int:
@@ -731,6 +792,44 @@ def _ensure_schema_migrations() -> None:
         with engine.begin() as connection:
             connection.execute(
                 text("ALTER TABLE support_queries ADD COLUMN user_response TEXT NULL")
+            )
+    if "otp_hash" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE support_queries ADD COLUMN otp_hash VARCHAR(255) NULL"))
+    if "otp_attempt_count" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_attempt_count INTEGER NOT NULL DEFAULT 0")
+            )
+    if "otp_max_attempts" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_max_attempts INTEGER NOT NULL DEFAULT 3")
+            )
+    if "otp_status" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_status VARCHAR(20) NOT NULL DEFAULT 'NOT_REQUIRED'")
+            )
+    if "otp_delivery_channel" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_delivery_channel VARCHAR(20) NULL")
+            )
+    if "otp_delivery_target" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_delivery_target VARCHAR(255) NULL")
+            )
+    if "otp_expires_at" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_expires_at DATETIME NULL")
+            )
+    if "otp_verified_at" not in support_query_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE support_queries ADD COLUMN otp_verified_at DATETIME NULL")
             )
 
 
@@ -1329,38 +1428,13 @@ def simulate_transaction(
         )
 
     if execute_transfer and is_high_fraud_transfer:
+        otp_max_attempts = max(int(settings.otp_max_attempts), 1)
+        otp_expires_at = datetime.utcnow() + timedelta(minutes=max(int(settings.otp_expiry_minutes), 1))
+        otp_code = _generate_otp_code()
+        otp_hash = get_password_hash(otp_code)
         query_message = (payload.high_risk_query_message or "").strip()
-        if len(query_message) < 10:
-            return TransactionExecutionResponse(
-                transaction_id=model_result["transaction_id"],
-                sender_account=_to_account_response(sender),
-                receiver_account=_to_account_response(receiver),
-                transaction_type=payload.transaction_type,
-                amount=payload.amount,
-                location=resolved_location,
-                device_type=payload.device_type,
-                executed=False,
-                note="High fraud risk detected. Please contact admin with transaction details.",
-                cashback_earned=0.0,
-                timestamp=server_now_ist,
-                transfer_state="BLOCKED_HIGH_RISK",
-                action_required="CONTACT_ADMIN",
-                risk_percentage=risk_percentage,
-                risk_signals=RiskSignals(**risk_signals),
-                prediction=PredictionBreakdown(
-                    fraud_probability=final_score,
-                    random_forest_probability=model_result["random_forest_probability"],
-                    xgboost_probability=model_result["xgboost_probability"],
-                    supervised_fusion_score=model_result["supervised_fusion_score"],
-                    anomaly_score=model_result["anomaly_score"],
-                    is_anomaly=model_result["is_anomaly"],
-                    isolation_forest_score=model_result["isolation_forest_score"],
-                    final_fusion_score=final_score,
-                    risk_band=risk_band,
-                    prediction=prediction,
-                    feature_importance=model_result["feature_importance"],
-                ),
-            )
+        if not query_message:
+            query_message = "High-risk transfer requires OTP verification."
 
         pending_transaction = Transaction(
             transaction_id=model_result["transaction_id"],
@@ -1382,7 +1456,7 @@ def simulate_transaction(
             isolation_forest_score=model_result["isolation_forest_score"],
             final_score=final_score,
             prediction=prediction,
-            transaction_status=TX_STATUS_PENDING_ADMIN,
+            transaction_status=TX_STATUS_OTP_PENDING,
             admin_decision=None,
             admin_decided_at=None,
             admin_decided_by_user_id=None,
@@ -1391,7 +1465,7 @@ def simulate_transaction(
                 item.feature: item.contribution for item in model_result["feature_importance"]
             },
             feature_payload=model_result["feature_payload"],
-            note="Pending admin approval: high-risk transfer",
+            note="Pending OTP verification: high-risk transfer",
             created_at=server_now_naive,
         )
         db.add(pending_transaction)
@@ -1401,7 +1475,7 @@ def simulate_transaction(
             case_id=_new_fraud_case_id(),
             transaction_id=pending_transaction.id,
             user_id=current_user.id,
-            status="ESCALATED_TO_ADMIN",
+            status="UNDER_REVIEW",
             severity="CRITICAL" if hard_rule_triggered else "HIGH",
             reason_flags={
                 "hard_rule_triggered": hard_rule_triggered,
@@ -1415,8 +1489,8 @@ def simulate_transaction(
                 "final_score": round(float(final_score), 4),
                 "risk_percentage": risk_percentage,
             },
-            analyst_notes="High-risk transfer waiting for admin decision",
-            admin_notes="",
+            analyst_notes="High-risk transfer waiting for OTP verification",
+            admin_notes="OTP verification required",
         )
         db.add(fraud_case)
         db.flush()
@@ -1430,10 +1504,33 @@ def simulate_transaction(
             message=query_message,
             user_response="",
             status="OPEN",
-            analyst_notes="Pending admin action: allow or deny transaction",
-            admin_notes="",
+            analyst_notes="OTP verification pending",
+            admin_notes="OTP sent to registered email.",
+            otp_hash=otp_hash,
+            otp_attempt_count=0,
+            otp_max_attempts=otp_max_attempts,
+            otp_status=OTP_STATUS_PENDING,
+            otp_delivery_channel="EMAIL",
+            otp_delivery_target=current_user.email,
+            otp_expires_at=otp_expires_at,
+            otp_verified_at=None,
         )
         db.add(support_query)
+
+        try:
+            _send_otp_email(
+                recipient_email=current_user.email,
+                otp_code=otp_code,
+                transaction_id=pending_transaction.transaction_id,
+                amount=float(payload.amount),
+            )
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Unable to deliver OTP email: {exc}",
+            ) from exc
+
         db.commit()
         db.refresh(sender)
         db.refresh(receiver)
@@ -1447,14 +1544,16 @@ def simulate_transaction(
             location=resolved_location,
             device_type=payload.device_type,
             executed=False,
-            note="High-risk transfer submitted to admin for approval.",
+            note=f"High-risk transfer requires OTP verification. OTP sent to {_mask_email(current_user.email)}.",
             cashback_earned=0.0,
             timestamp=server_now_ist,
-            transfer_state="PENDING_ADMIN_APPROVAL",
-            action_required="WAITING_ADMIN_DECISION",
+            transfer_state=TX_STATUS_OTP_PENDING,
+            action_required="OTP_VERIFICATION",
             risk_percentage=risk_percentage,
             pending_query_id=support_query.query_id,
             pending_case_id=fraud_case.case_id,
+            otp_expires_at=otp_expires_at,
+            otp_attempts_remaining=otp_max_attempts,
             risk_signals=RiskSignals(**risk_signals),
             prediction=PredictionBreakdown(
                 fraud_probability=final_score,
@@ -1754,6 +1853,11 @@ def _support_query_response(
         transaction_risk_score=transaction_risk_score,
         transaction_prediction=transaction_prediction,
         transaction_note=transaction_note,
+        otp_status=query.otp_status,
+        otp_attempt_count=query.otp_attempt_count,
+        otp_max_attempts=query.otp_max_attempts,
+        otp_expires_at=query.otp_expires_at,
+        otp_verified_at=query.otp_verified_at,
         created_at=query.created_at,
         updated_at=query.updated_at,
     )
@@ -1762,6 +1866,21 @@ def _support_query_response(
 def _high_risk_transaction_status(transaction: Transaction, query: SupportQuery | None = None) -> str:
     note_value = (transaction.note or "").strip().lower()
     admin_note = ((query.admin_notes if query else "") or "").upper()
+    otp_status = ((query.otp_status if query else "") or "").upper()
+
+    if note_value.startswith("transaction executed") or "executed after" in note_value:
+        return HIGH_RISK_STATUS_EXECUTED
+
+    normalized_status = (transaction.transaction_status or "").strip().upper()
+    if normalized_status == TX_STATUS_EXECUTED:
+        return HIGH_RISK_STATUS_EXECUTED
+
+    if otp_status == OTP_STATUS_PENDING:
+        return HIGH_RISK_STATUS_PENDING
+    if otp_status == OTP_STATUS_VERIFIED:
+        return HIGH_RISK_STATUS_APPROVED
+    if otp_status in {OTP_STATUS_FAILED, OTP_STATUS_EXPIRED}:
+        return HIGH_RISK_STATUS_DENIED
 
     if note_value.startswith("pending admin approval"):
         return HIGH_RISK_STATUS_PENDING
@@ -1769,15 +1888,11 @@ def _high_risk_transaction_status(transaction: Transaction, query: SupportQuery 
         return HIGH_RISK_STATUS_APPROVED
     if note_value.startswith("denied by admin"):
         return HIGH_RISK_STATUS_DENIED
-    if note_value.startswith("transaction executed") or "executed after admin approval" in note_value:
-        return HIGH_RISK_STATUS_EXECUTED
-
-    normalized_status = (transaction.transaction_status or "").strip().upper()
-    if normalized_status == TX_STATUS_PENDING_ADMIN:
+    if normalized_status in {TX_STATUS_PENDING_ADMIN, TX_STATUS_OTP_PENDING}:
         return HIGH_RISK_STATUS_PENDING
     if normalized_status == TX_STATUS_ADMIN_APPROVED:
         return HIGH_RISK_STATUS_APPROVED
-    if normalized_status == TX_STATUS_ADMIN_DENIED:
+    if normalized_status in {TX_STATUS_ADMIN_DENIED, TX_STATUS_OTP_FAILED}:
         return HIGH_RISK_STATUS_DENIED
     if normalized_status == TX_STATUS_EXECUTED:
         return HIGH_RISK_STATUS_EXECUTED
@@ -2110,105 +2225,10 @@ def decide_high_risk_transaction(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    support_query = db.query(SupportQuery).filter(SupportQuery.query_id == query_id).first()
-    if support_query is None:
-        raise HTTPException(status_code=404, detail="Support query not found")
-    if support_query.query_type != "HIGH_RISK_TRANSFER":
-        raise HTTPException(status_code=400, detail="Query is not a high-risk transfer request")
-    if support_query.status != "OPEN":
-        raise HTTPException(status_code=409, detail="This high-risk query is already decided")
-    if support_query.fraud_case_id is None:
-        raise HTTPException(status_code=404, detail="Linked fraud case not found")
-
-    fraud_case = db.query(FraudCase).filter(FraudCase.id == support_query.fraud_case_id).first()
-    if fraud_case is None:
-        raise HTTPException(status_code=404, detail="Linked fraud case not found")
-
-    transaction = db.query(Transaction).filter(Transaction.id == fraud_case.transaction_id).first()
-    if transaction is None:
-        raise HTTPException(status_code=404, detail="Linked transaction not found")
-
-    if not (
-        transaction.transaction_status == TX_STATUS_PENDING_ADMIN
-        or transaction.note.startswith("Pending admin approval")
-    ):
-        raise HTTPException(status_code=409, detail="Transaction is not in pending-admin state")
-
-    decision = payload.decision.strip().upper()
-    admin_note = (payload.admin_notes or "").strip()
-    timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-
-    if decision == ADMIN_DECISION_ALLOW:
-        transaction.note = "Approved by admin: awaiting user transfer execution"
-        transaction.transaction_status = TX_STATUS_ADMIN_APPROVED
-        transaction.admin_decision = ADMIN_DECISION_ALLOW
-        transaction.admin_decided_at = datetime.utcnow()
-        transaction.admin_decided_by_user_id = current_user.id
-        support_query.status = "RESOLVED"
-        support_query.admin_notes = admin_note or "APPROVED: Transaction allowed by admin. User can execute now."
-        support_query.analyst_notes = (
-            f"ADMIN_DECISION=ALLOW; DECIDED_BY={current_user.id}; DECIDED_AT={timestamp}"
-        )
-        fraud_case.status = "ACTION_TAKEN"
-        fraud_case.admin_notes = support_query.admin_notes
-
-        _log_audit(
-            db,
-            actor=current_user,
-            action="approve_high_risk_transaction_request",
-            target_type="transaction",
-            target_id=transaction.transaction_id,
-            details={"query_id": support_query.query_id, "decision": ADMIN_DECISION_ALLOW},
-        )
-    else:
-        transaction.note = "Denied by admin: high-risk transaction was not approved"
-        transaction.transaction_status = TX_STATUS_ADMIN_DENIED
-        transaction.admin_decision = ADMIN_DECISION_DENY
-        transaction.admin_decided_at = datetime.utcnow()
-        transaction.admin_decided_by_user_id = current_user.id
-        support_query.status = "RESOLVED"
-        support_query.admin_notes = admin_note or "DENIED: Permission denied"
-        support_query.analyst_notes = (
-            f"ADMIN_DECISION=DENY; DECIDED_BY={current_user.id}; DECIDED_AT={timestamp}"
-        )
-        fraud_case.status = "ACTION_TAKEN"
-        fraud_case.admin_notes = support_query.admin_notes
-
-        _log_audit(
-            db,
-            actor=current_user,
-            action="deny_high_risk_transaction_request",
-            target_type="transaction",
-            target_id=transaction.transaction_id,
-            details={"query_id": support_query.query_id, "decision": ADMIN_DECISION_DENY},
-        )
-
-    db.add(transaction)
-    db.add(fraud_case)
-    db.add(support_query)
-    db.commit()
-    db.refresh(support_query)
-    db.refresh(transaction)
-
-    user_details = (
-        db.query(User.full_name, User.email)
-        .filter(User.id == support_query.user_id)
-        .first()
-    )
-    if user_details is None:
-        raise HTTPException(status_code=404, detail="User context not found")
-    user_name, user_email = user_details
-
-    return _support_query_response(
-        query=support_query,
-        user_name=user_name,
-        user_email=user_email,
-        case_id=fraud_case.case_id,
-        transaction_id=transaction.transaction_id,
-        transaction_amount=float(transaction.amount),
-        transaction_risk_score=float(transaction.final_score),
-        transaction_prediction=transaction.prediction,
-        transaction_note=transaction.note,
+    del query_id, payload, current_user, db
+    raise HTTPException(
+        status_code=410,
+        detail="Admin high-risk decisions are deprecated. High-risk transfers now use user OTP verification.",
     )
 
 
@@ -2346,13 +2366,17 @@ def list_my_high_risk_transactions(
             query = query.filter(
                 or_(
                     Transaction.transaction_status == TX_STATUS_PENDING_ADMIN,
+                    Transaction.transaction_status == TX_STATUS_OTP_PENDING,
+                    SupportQuery.otp_status == OTP_STATUS_PENDING,
                     Transaction.note.like("Pending admin approval%"),
+                    Transaction.note.like("Pending OTP verification%"),
                 )
             )
         elif normalized_status == HIGH_RISK_STATUS_APPROVED:
             query = query.filter(
                 or_(
                     Transaction.transaction_status == TX_STATUS_ADMIN_APPROVED,
+                    SupportQuery.otp_status == OTP_STATUS_VERIFIED,
                     Transaction.note.like("Approved by admin%"),
                 )
             )
@@ -2360,6 +2384,8 @@ def list_my_high_risk_transactions(
             query = query.filter(
                 or_(
                     Transaction.transaction_status == TX_STATUS_ADMIN_DENIED,
+                    Transaction.transaction_status == TX_STATUS_OTP_FAILED,
+                    SupportQuery.otp_status.in_([OTP_STATUS_FAILED, OTP_STATUS_EXPIRED]),
                     Transaction.note.like("Denied by admin%"),
                 )
             )
@@ -2407,11 +2433,12 @@ def list_my_high_risk_transactions(
 
 
 @app.post(
-    "/my/high-risk-transactions/{transaction_id}/execute",
+    "/my/high-risk-transactions/{transaction_id}/verify-otp",
     response_model=HighRiskTransferExecuteResponse,
 )
-def execute_my_high_risk_transaction(
+def verify_high_risk_transaction_otp(
     transaction_id: str,
+    payload: HighRiskOtpVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -2443,13 +2470,113 @@ def execute_my_high_risk_transaction(
             status=HIGH_RISK_STATUS_EXECUTED,
             message="Transaction was already executed.",
             cashback_earned=round(float(transaction.cashback_amount or 0.0), 2),
+            remaining_attempts=0,
+            user_blocked=current_user.is_blocked,
         )
 
     if status_value == HIGH_RISK_STATUS_DENIED:
-        raise HTTPException(status_code=409, detail="Admin denied this transaction")
+        return HighRiskTransferExecuteResponse(
+            transaction_id=transaction.transaction_id,
+            executed=False,
+            status=HIGH_RISK_STATUS_DENIED,
+            message="This high-risk transaction is denied.",
+            cashback_earned=0.0,
+            remaining_attempts=0,
+            user_blocked=current_user.is_blocked,
+        )
 
-    if status_value != HIGH_RISK_STATUS_APPROVED:
-        raise HTTPException(status_code=409, detail="Transaction is waiting for admin approval")
+    if transaction.transaction_status != TX_STATUS_OTP_PENDING:
+        raise HTTPException(status_code=409, detail="Transaction is not waiting for OTP verification")
+
+    now = datetime.utcnow()
+    if support_query.otp_expires_at and now > support_query.otp_expires_at:
+        support_query.otp_status = OTP_STATUS_EXPIRED
+        support_query.status = "RESOLVED"
+        support_query.admin_notes = "OTP expired. High-risk transaction denied."
+        support_query.otp_hash = None
+        transaction.transaction_status = TX_STATUS_OTP_FAILED
+        transaction.note = "OTP expired: high-risk transaction denied"
+        fraud_case.status = "ACTION_TAKEN"
+        fraud_case.admin_notes = "OTP expired before verification"
+        db.add(support_query)
+        db.add(transaction)
+        db.add(fraud_case)
+        db.commit()
+        return HighRiskTransferExecuteResponse(
+            transaction_id=transaction.transaction_id,
+            executed=False,
+            status=HIGH_RISK_STATUS_DENIED,
+            message="OTP expired. Please initiate a new transfer.",
+            cashback_earned=0.0,
+            remaining_attempts=0,
+            user_blocked=current_user.is_blocked,
+        )
+
+    if not support_query.otp_hash:
+        raise HTTPException(status_code=409, detail="OTP challenge is not available for this transaction")
+
+    max_attempts = max(int(support_query.otp_max_attempts or settings.otp_max_attempts), 1)
+    if not verify_password(payload.otp_code, support_query.otp_hash):
+        support_query.otp_attempt_count = int(support_query.otp_attempt_count or 0) + 1
+        remaining_attempts = max(max_attempts - support_query.otp_attempt_count, 0)
+
+        if support_query.otp_attempt_count >= max_attempts:
+            current_user.is_blocked = True
+            current_user.status = "SUSPENDED"
+            current_user.blocked_reason = "Blocked after 3 failed OTP attempts on high-risk transaction"
+            current_user.blocked_at = now
+            current_user.blocked_by_user_id = None
+
+            support_query.otp_status = OTP_STATUS_FAILED
+            support_query.status = "RESOLVED"
+            support_query.admin_notes = "User blocked after 3 failed OTP attempts"
+            support_query.otp_hash = None
+
+            transaction.transaction_status = TX_STATUS_OTP_FAILED
+            transaction.note = "OTP verification failed 3 times. Transaction denied and account blocked."
+
+            fraud_case.status = "ACTION_TAKEN"
+            fraud_case.admin_notes = "Auto-blocked user after 3 failed OTP attempts"
+
+            _log_audit(
+                db,
+                actor=current_user,
+                action="auto_block_after_otp_failures",
+                target_type="user",
+                target_id=str(current_user.id),
+                details={"query_id": support_query.query_id, "transaction_id": transaction.transaction_id},
+            )
+
+            db.add(current_user)
+            db.add(support_query)
+            db.add(transaction)
+            db.add(fraud_case)
+            db.commit()
+
+            return HighRiskTransferExecuteResponse(
+                transaction_id=transaction.transaction_id,
+                executed=False,
+                status=HIGH_RISK_STATUS_DENIED,
+                message="Incorrect OTP entered 3 times. Account is blocked and transaction denied.",
+                cashback_earned=0.0,
+                remaining_attempts=0,
+                user_blocked=True,
+            )
+
+        support_query.admin_notes = (
+            f"Invalid OTP attempt ({support_query.otp_attempt_count}/{max_attempts})"
+        )
+        db.add(support_query)
+        db.commit()
+        return HighRiskTransferExecuteResponse(
+            transaction_id=transaction.transaction_id,
+            executed=False,
+            status=HIGH_RISK_STATUS_PENDING,
+            message="Incorrect OTP. Please try again.",
+            cashback_earned=0.0,
+            remaining_attempts=remaining_attempts,
+            user_blocked=False,
+        )
 
     sender = db.query(Account).filter(Account.id == transaction.sender_account_id).first()
     receiver = db.query(Account).filter(Account.id == transaction.receiver_account_id).first()
@@ -2480,31 +2607,37 @@ def execute_my_high_risk_transaction(
 
     sender.balance = _decimal_to_float(sender_balance - transaction.amount + cashback_earned)
     receiver.balance = _decimal_to_float(receiver.balance) + transaction.amount
+
     transaction.cashback_amount = cashback_earned
     transaction.transaction_status = TX_STATUS_EXECUTED
-    transaction.executed_at = datetime.utcnow()
+    transaction.executed_at = now
     transaction.note = (
-        f"Transaction executed after admin approval. Cashback credited: INR {cashback_earned:.2f}"
+        f"Transaction executed after OTP verification. Cashback credited: INR {cashback_earned:.2f}"
     )
 
-    fraud_case.admin_notes = (
-        (fraud_case.admin_notes or "")
-        + f" | USER_EXECUTED_AT={datetime.utcnow().replace(microsecond=0).isoformat()}Z"
-    ).strip(" |")
+    support_query.status = "RESOLVED"
+    support_query.otp_status = OTP_STATUS_VERIFIED
+    support_query.otp_verified_at = now
+    support_query.otp_hash = None
+    support_query.admin_notes = "OTP verified. Transaction executed successfully."
+
+    fraud_case.status = "ACTION_TAKEN"
+    fraud_case.admin_notes = "User OTP verified and transaction executed"
 
     _log_audit(
         db,
         actor=current_user,
-        action="execute_approved_high_risk_transaction",
+        action="verify_otp_and_execute_high_risk_transaction",
         target_type="transaction",
         target_id=transaction.transaction_id,
-        details={"query_id": support_query.query_id, "decision": "EXECUTE"},
+        details={"query_id": support_query.query_id, "otp_status": OTP_STATUS_VERIFIED},
     )
 
     db.add(sender)
     db.add(receiver)
     db.add(transaction)
     db.add(fraud_case)
+    db.add(support_query)
     db.commit()
     db.refresh(transaction)
 
@@ -2514,6 +2647,24 @@ def execute_my_high_risk_transaction(
         status=HIGH_RISK_STATUS_EXECUTED,
         message="Transfer completed successfully.",
         cashback_earned=round(float(transaction.cashback_amount or 0.0), 2),
+        remaining_attempts=max_attempts,
+        user_blocked=False,
+    )
+
+
+@app.post(
+    "/my/high-risk-transactions/{transaction_id}/execute",
+    response_model=HighRiskTransferExecuteResponse,
+)
+def execute_my_high_risk_transaction(
+    transaction_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    del transaction_id, current_user, db
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint is deprecated. Use /my/high-risk-transactions/{transaction_id}/verify-otp.",
     )
 
 
