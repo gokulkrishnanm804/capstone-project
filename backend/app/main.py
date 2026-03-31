@@ -4,6 +4,7 @@ import json
 import re
 import random
 import smtplib
+import socket
 import threading
 import statistics
 import urllib.request
@@ -457,12 +458,28 @@ def _send_otp_email(*, recipient_email: str, otp_code: str, transaction_id: str,
         )
     )
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
-        if settings.smtp_use_tls:
-            smtp.starttls()
-        if settings.smtp_username and settings.smtp_password:
-            smtp.login(settings.smtp_username, settings.smtp_password)
-        smtp.send_message(message)
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+            if settings.smtp_use_tls:
+                smtp.starttls()
+            if settings.smtp_username and settings.smtp_password:
+                smtp.login(settings.smtp_username, settings.smtp_password)
+            smtp.send_message(message)
+    except socket.gaierror as exc:
+        raise RuntimeError(
+            f"SMTP host lookup failed for '{settings.smtp_host}'. "
+            "Set a valid SMTP_HOST (for Gmail: smtp.gmail.com)."
+        ) from exc
+    except smtplib.SMTPAuthenticationError as exc:
+        raise RuntimeError(
+            "SMTP authentication failed. Verify SMTP_USERNAME and SMTP_PASSWORD. "
+            "For Gmail, use a 16-character App Password (2-Step Verification required)."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"SMTP network error while connecting to {settings.smtp_host}:{settings.smtp_port}. "
+            "Check internet access/firewall and SMTP host/port settings."
+        ) from exc
 
 
 def _decimal_to_float(value: Decimal | float) -> float:
