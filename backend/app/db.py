@@ -29,6 +29,12 @@ def _initialise_engine():
             conn.exec_driver_sql("SELECT 1")
         return primary_engine
     except OperationalError as exc:
+        if not settings.db_fallback_to_sqlite:
+            raise RuntimeError(
+                "Failed to connect to DATABASE_URL and DB_FALLBACK_TO_SQLITE is false. "
+                "Update DATABASE_URL with valid MySQL credentials or set DB_FALLBACK_TO_SQLITE=true "
+                "for local fallback."
+            ) from exc
         fallback_url = _sqlite_fallback_url()
         print(
             "[WARN] Database connection failed for configured DATABASE_URL. "
