@@ -39,8 +39,23 @@ class Settings(BaseSettings):
             return candidate_backend
         return candidate_repo
 
+    @field_validator("smtp_host", "smtp_username", "smtp_from_email", mode="before")
+    @classmethod
+    def _normalise_smtp_text(cls, value):
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("smtp_password", mode="before")
+    @classmethod
+    def _normalise_smtp_password(cls, value):
+        if value is None:
+            return ""
+        # Gmail app passwords are commonly copied with spaces between groups.
+        return "".join(str(value).split())
+
     model_config = SettingsConfigDict(
-        env_file=BASE_DIR / ".env",
+        env_file=(BASE_DIR / ".env", BASE_DIR / ".env.example"),
         env_file_encoding="utf-8",
         protected_namespaces=("settings_",),
     )
